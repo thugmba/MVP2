@@ -1,0 +1,318 @@
+:root {
+  --bg: #0b0b0c;
+  --panel: #121417;
+  --text: #f3f3f3;
+  --subtle: #c9c9c9;
+  --accent: #dc0000; /* Ferrari red */
+  --weekly-w: 340px; /* width of the fixed winners panel */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 50% -10%, #2a0c0c 0%, var(--bg) 60%);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 2rem;
+}
+
+.main-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 1280px;
+  justify-content: center;
+}
+
+.left-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  flex: 1 1 560px;
+  min-width: min(92vw, 560px);
+}
+
+.title {
+  margin: 0 0 0.25rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--subtle);
+}
+
+.board {
+  white-space: pre; /* preserve spaces for padded width */
+  display: inline-block;
+  min-width: 11ch;
+  max-width: 100%;
+  text-align: center;
+  padding: clamp(14px, 2.2vw, 24px) clamp(18px, 3vw, 32px);
+  font-family: Consolas, Menlo, Monaco, "Courier New", monospace;
+  /* Doubled from original size */
+  font-size: clamp(72px, 16vw, 192px);
+  line-height: 1.05;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.12)), var(--panel);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 -1px 0 rgba(255,255,255,0.06),
+    0 10px 30px rgba(220, 0, 0, 0.25),
+    0 2px 8px rgba(0,0,0,0.4);
+  text-shadow: 0 0 18px rgba(220, 0, 0, 0.35);
+}
+
+.btn {
+  appearance: none;
+  border: none;
+  padding: 0.9rem 1.25rem;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  background: linear-gradient(180deg, #ff3b3b, #dc0000);
+  box-shadow: 0 8px 18px rgba(220, 0, 0, 0.35), 0 1px 0 rgba(255,255,255,0.25) inset;
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.15s ease;
+}
+
+.btn:hover { filter: brightness(1.02); }
+.btn:active { transform: translateY(1px) scale(0.99); }
+.btn:disabled { cursor: not-allowed; filter: grayscale(0.35) brightness(0.92); }
+
+.btn-secondary {
+  background: linear-gradient(180deg, #2e3237, #23272b);
+  color: #e8e8e8;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255,255,255,0.12) inset;
+}
+
+.hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--subtle);
+}
+
+/* Hide preset winner status per request */
+#winnerStatus { display: none !important; }
+
+.controls { display: flex; gap: 0.6rem; }
+
+/* Overlayed Start button centered on board */
+.board-wrap { position: relative; display: inline-block; }
+.start-btn-large {
+  display: block;
+  margin: 0.8rem auto 0;
+  width: clamp(180px, 30%, 360px);
+  padding: clamp(1rem, 2.8vw, 1.75rem) clamp(1.4rem, 3.6vw, 2.25rem);
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  border-radius: 999px;
+  box-shadow: 0 10px 26px rgba(220,0,0,0.45), 0 2px 0 rgba(255,255,255,0.15) inset;
+}
+
+.minor-controls { display: flex; gap: 0.5rem; }
+
+.sub-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--subtle);
+}
+.sub-label { font-weight: 600; letter-spacing: 0.04em; }
+.sub-value { min-width: 2.5ch; text-align: right; color: var(--text); font-weight: 700; }
+
+/* Dialog styles */
+.dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.dialog {
+  border: none;
+  border-radius: 14px;
+  padding: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.12)), var(--panel);
+  color: var(--text);
+  width: min(92vw, 720px);
+}
+.dialog-body { padding: 1rem 1rem 0.75rem; }
+.dialog-title { margin: 0 0 0.25rem; font-size: 1.25rem; }
+.dialog-subtitle { margin: 0 0 0.75rem; color: var(--subtle); }
+.dialog-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 220px;
+  border-radius: 10px;
+  border: 1px solid #2a3b4d;
+  background: #0d141b;
+  color: var(--text);
+  padding: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.8rem 0.1rem 0.9rem; }
+
+/* Weekly winners (F1-style) */
+.weekly {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: var(--weekly-w);
+  height: 100vh;
+  overflow: auto;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.12)), var(--panel);
+  border-radius: 14px;
+  padding: 0.75rem 0.75rem 0.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+.weekly-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  color: var(--subtle);
+}
+
+.weekly-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 0.4rem;
+}
+
+.btn-sm { padding: 0.45rem 0.7rem; font-size: 0.9rem; }
+
+.weekly-head {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(220, 0, 0, 0.25), transparent 60%);
+  border: 1px solid #2a3b4d;
+}
+
+.weekly-head .col-week,
+.weekly-head .col-name {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  color: #e7f0ff;
+}
+
+.weekly-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+  overflow: auto;
+}
+
+.weekly-item {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: #0d141b;
+  border-left: 6px solid #4d0e0e;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.weekly-week {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color: #cfe2f3;
+}
+
+.weekly-name {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Podium highlight colors */
+.weekly-item.p1 { border-left-color: #ffd700; }
+.weekly-item.p2 { border-left-color: #c0c0c0; }
+.weekly-item.p3 { border-left-color: #cd7f32; }
+
+.weekly-empty {
+  color: var(--subtle);
+  padding: 0.25rem 0.1rem 0.4rem;
+}
+
+@media (max-width: 900px) {
+  .left-col { min-width: 100%; }
+  .weekly {
+    position: static;
+    width: 100%;
+    max-height: none;
+  }
+}
+
+/* Reserve space on the right for fixed weekly panel on wide screens */
+@media (min-width: 1000px) {
+  .app {
+    padding-right: calc(var(--weekly-w) + 24px);
+  }
+  .left-col {
+    max-width: calc(100vw - var(--weekly-w) - 48px);
+  }
+}
+
+/* previously added F1 texture removed */
+
+/* Winner dialog grid */
+.name-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow: auto;
+  margin-top: 0.5rem;
+}
+
+.name-grid .name-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid #2a3b4d;
+  background: #0d141b;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.name-grid .name-btn:hover {
+  background: #13202b;
+}
+
+.winner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}

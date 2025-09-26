@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>🏆 Today's MVP Award 🎉</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1 class="title">🏆 Today's MVP Award 🎉</h1>
+      <aside class="weekly" id="weeklyBox" aria-live="polite">
+        <h2 class="weekly-title">Weekly Winners</h2>
+        <div class="weekly-head" role="presentation">
+          <div class="col-week">Week</div>
+          <div class="col-name">Name</div>
+        </div>
+        <ol id="weeklyList" class="weekly-list weekly-table" aria-label="Weekly winners"></ol>
+      </aside>
+
+      <div class="left-col">
+        <div class="board-wrap">
+          <div id="board" class="board" aria-live="polite" aria-atomic="true">READY</div>
+        </div>
+        <button id="startBtn" class="btn start-btn-large" type="button" aria-label="Start shuffling and pick a name">Start</button>
+        <div class="minor-controls">
+          <button id="setNamesBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Set the names list">Set Names</button>
+          <button id="setWinnerBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Set the winner name" title="Set Winner">🏆</button>
+          <button id="clearWeeklyBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Clear weekly winners table">Clear Table</button>
+        </div>
+        <div class="sub-controls" aria-label="Shuffle time control">
+          <label for="shuffleRange" class="sub-label">Shuffle Time</label>
+          <input id="shuffleRange" type="range" min="1" max="10" step="1" value="5" />
+          <span id="shuffleValue" class="sub-value">5s</span>
+        </div>
+        <p class="hint" id="winnerStatus" aria-live="polite"></p>
+      </div>
+
+      <dialog id="namesDialog" class="dialog">
+        <form method="dialog" class="dialog-body" id="namesForm" novalidate>
+          <h2 class="dialog-title">Set Names</h2>
+          <p class="dialog-subtitle">Paste names below, one per line. Blank lines are ignored.</p>
+          <textarea id="namesTextarea" class="dialog-textarea" rows="10" placeholder="Alice\nBob\nCharlie"></textarea>
+          <div class="dialog-actions">
+            <button type="button" id="cancelNamesBtn" class="btn btn-secondary">Cancel</button>
+            <button type="button" id="saveNamesBtn" class="btn">Save</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="winnerDialog" class="dialog">
+        <form method="dialog" class="dialog-body" id="winnerForm">
+          <h2 class="dialog-title">Select Winner</h2>
+          <p class="dialog-subtitle">Choose the predefined winner. Click a name below.</p>
+          <div id="winnerGrid" class="name-grid"></div>
+          <div class="dialog-actions">
+            <button type="button" id="cancelWinnerBtn" class="btn btn-secondary">Close</button>
+            <button type="button" id="clearWinnerBtn" class="btn btn-secondary">Clear Winner</button>
+          </div>
+        </form>
+      </dialog>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+  </html>
