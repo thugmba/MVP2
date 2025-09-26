@@ -172,6 +172,73 @@ function playCongrats() {
   });
 }
 
+let stopShuffleNoise = null;
+let shuffleTickTimer = null;
+
+function startShuffleSoundEffect() {
+  ensureAudio();
+  if (!audioCtx) return;
+
+  stopShuffleSoundEffect();
+
+  const bufferLength = Math.max(1, Math.floor(audioCtx.sampleRate * 0.4));
+  const noiseBuffer = audioCtx.createBuffer(1, bufferLength, audioCtx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  }
+
+  const noiseSource = audioCtx.createBufferSource();
+  noiseSource.buffer = noiseBuffer;
+  noiseSource.loop = true;
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = 950;
+  filter.Q.value = 1.4;
+
+  const gain = audioCtx.createGain();
+  const now = audioCtx.currentTime;
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.08);
+
+  noiseSource.connect(filter).connect(gain).connect(audioCtx.destination);
+  noiseSource.start(now);
+
+  shuffleTickTimer = setInterval(() => {
+    const baseFreq = 420 + Math.random() * 120;
+    playTone(baseFreq, 0, 0.045, "square", -18);
+  }, 95);
+
+  const localStop = () => {
+    const stopTime = audioCtx.currentTime;
+    gain.gain.cancelScheduledValues(stopTime);
+    const current = Math.max(0.0001, gain.gain.value);
+    gain.gain.setValueAtTime(current, stopTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, stopTime + 0.2);
+    noiseSource.stop(stopTime + 0.24);
+  };
+
+  noiseSource.onended = () => {
+    if (stopShuffleNoise === localStop) {
+      stopShuffleNoise = null;
+    }
+  };
+
+  stopShuffleNoise = localStop;
+}
+
+function stopShuffleSoundEffect() {
+  if (shuffleTickTimer) {
+    clearInterval(shuffleTickTimer);
+    shuffleTickTimer = null;
+  }
+  if (stopShuffleNoise) {
+    stopShuffleNoise();
+    stopShuffleNoise = null;
+  }
+}
+
 // Random character set similar to split-flap boards
 const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 function randChar() {
@@ -199,6 +266,7 @@ function startShuffleAndPick({ shuffleMs = 5000 } = {}) {
   isBusy = true;
   startBtn.disabled = true;
   ensureAudio();
+  startShuffleSoundEffect();
 
   // Initial board content fixed width
   board.textContent = randomRow();
@@ -211,6 +279,7 @@ function startShuffleAndPick({ shuffleMs = 5000 } = {}) {
 
   setTimeout(() => {
     clearInterval(interval);
+    stopShuffleSoundEffect();
     if (!names.length) {
       board.textContent = padToMax("NO NAMES");
       isBusy = false;
