@@ -536,6 +536,7 @@ function renderWeeklyList() {
   rows.forEach((r, idx) => {
     const li = document.createElement("li");
     li.className = `weekly-item ${idx === 0 ? "p1" : idx === 1 ? "p2" : idx === 2 ? "p3" : ""}`.trim();
+    li.dataset.ts = String(r.ts);
     const weekEl = document.createElement("div");
     weekEl.className = "weekly-week";
     weekEl.textContent = r.label;
@@ -552,6 +553,25 @@ function renderWeeklyList() {
 const shuffleRange = document.getElementById("shuffleRange");
 const shuffleValue = document.getElementById("shuffleValue");
 let shuffleSeconds = 5;
+
+const weeklyListEl = document.getElementById("weeklyList");
+if (weeklyListEl) {
+  weeklyListEl.addEventListener("click", (event) => {
+    const item = event.target.closest("li.weekly-item");
+    if (!item || !weeklyListEl.contains(item)) return;
+    const ts = Number(item.dataset.ts || "");
+    if (!Number.isFinite(ts)) return;
+    const idx = ranking.findIndex((entry) => entry && typeof entry.ts === "number" && entry.ts === ts);
+    if (idx === -1) return;
+    const entry = ranking[idx];
+    const name = entry && typeof entry.name === "string" ? entry.name : "this winner";
+    const ok = confirm(`Remove ${name} from the winners list?`);
+    if (!ok) return;
+    ranking.splice(idx, 1);
+    saveRanking();
+    renderWeeklyList();
+  });
+}
 
 function updateShuffleUI(val) {
   shuffleValue.textContent = `${val}s`;
@@ -570,21 +590,11 @@ if (shuffleRange) {
 const clearWeeklyBtn = document.getElementById("clearWeeklyBtn");
 if (clearWeeklyBtn) {
   clearWeeklyBtn.addEventListener("click", () => {
-    const ok = confirm("Clear ALL saved data (localStorage) and reset to defaults? This cannot be undone.");
+    const ok = confirm("Clear all saved winners from the weekly list? This cannot be undone.");
     if (!ok) return;
-    try {
-      localStorage.clear();
-    } catch {}
-    // Reset in-memory state to defaults
+    // Reset winners only
     ranking = [];
-    names = DEFAULT_NAMES.slice();
-    fixedWinner = null;
-    pendingConsumeFixedWinner = false;
-    maxLen = computeMaxLen();
-    // Refresh UI
-    board.textContent = padToMax("READY");
-    updateStartEnabled();
-    updateWinnerStatus();
+    saveRanking();
     renderWeeklyList();
   });
 }
