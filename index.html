@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <button id="loginBtn" class="btn login-btn" type="button" aria-label="Login with Google">Login</button>
     <main class="app">
       <h1 class="title">🏆 Today's MVP Award 🎉</h1>
       <aside class="weekly" id="weeklyBox" aria-live="polite">
@@ -60,7 +61,19 @@
         </form>
       </dialog>
     </main>
-
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script>
+      window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
+        apiKey: "AIzaSyD225v6FB15Syii_UGlulV-ttbQT1A7zF8",
+        authDomain: "thumvp-3238b.firebaseapp.com",
+        projectId: "thumvp-3238b",
+        storageBucket: "thumvp-3238b.firebasestorage.app",
+        messagingSenderId: "330875315451",
+        appId: "1:330875315451:web:31de5dea1594bbb9047c5e",
+        measurementId: "G-YNW7FKETH3"
+      };
+    </script>
     <script src="app.js"></script>
   </body>
   </html>

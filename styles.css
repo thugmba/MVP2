@@ -20,6 +20,15 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
+.login-btn {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1100;
+  padding: 0.65rem 1.1rem;
+  font-size: 0.95rem;
+}
+
 .app {
   min-height: 100vh;
   display: flex;

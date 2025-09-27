@@ -37,6 +37,97 @@ const winnerGrid = document.getElementById("winnerGrid");
 const cancelWinnerBtn = document.getElementById("cancelWinnerBtn");
 const clearWinnerBtn = document.getElementById("clearWinnerBtn");
 const winnerStatus = document.getElementById("winnerStatus");
+const loginBtn = document.getElementById("loginBtn");
+
+let firebaseAuth = null;
+let firebaseGoogleProvider = null;
+
+function hasValidFirebaseConfig(config) {
+  if (!config || typeof config !== "object") return false;
+  const required = ["apiKey", "authDomain", "projectId", "appId"];
+  for (const key of required) {
+    const value = config[key];
+    if (typeof value !== "string" || !value.trim() || value.includes("YOUR_")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function updateLoginButton() {
+  if (!loginBtn) return;
+  const user = firebaseAuth && firebaseAuth.currentUser;
+  if (user) {
+    const display = (user.displayName || user.email || "").trim();
+    loginBtn.textContent = display ? `Sign out (${display})` : "Sign out";
+    loginBtn.title = display ? `Signed in as ${display}` : "Signed in";
+  } else {
+    loginBtn.textContent = "Login";
+    loginBtn.title = "Login";
+  }
+}
+
+function showFirebaseUnavailableAlert() {
+  alert("Firebase scripts failed to load. Verify the CDN script tags in index.html.");
+}
+
+function showFirebaseConfigAlert() {
+  alert("Firebase is not configured yet. Update window.FIREBASE_CONFIG with your project credentials.");
+}
+
+function handleLoginClick() {
+  if (!firebaseAuth || !firebaseGoogleProvider) {
+    showFirebaseConfigAlert();
+    return;
+  }
+  const user = firebaseAuth.currentUser;
+  if (user) {
+    firebaseAuth.signOut().catch((err) => {
+      console.error("Firebase sign-out failed", err);
+      alert("Sign-out failed. Check the console for details.");
+    });
+    return;
+  }
+  firebaseAuth
+    .signInWithPopup(firebaseGoogleProvider)
+    .catch((err) => {
+      if (err && err.code === "auth/popup-closed-by-user") return;
+      console.error("Google sign-in failed", err);
+      alert("Google sign-in failed. Check the console for details.");
+    });
+}
+
+function initFirebaseAuth() {
+  if (!loginBtn) return;
+  updateLoginButton();
+  const config = typeof window !== "undefined" ? window.FIREBASE_CONFIG : undefined;
+  if (typeof firebase === "undefined" || !firebase || typeof firebase.auth !== "function") {
+    loginBtn.addEventListener("click", showFirebaseUnavailableAlert);
+    loginBtn.title = "Firebase scripts missing";
+    return;
+  }
+  if (!hasValidFirebaseConfig(config)) {
+    loginBtn.addEventListener("click", showFirebaseConfigAlert);
+    loginBtn.title = "Configure Firebase to enable login";
+    return;
+  }
+  try {
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp(config);
+    }
+    firebaseAuth = firebase.auth();
+    firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
+    firebaseAuth.onAuthStateChanged(() => {
+      updateLoginButton();
+    });
+    loginBtn.addEventListener("click", handleLoginClick);
+    updateLoginButton();
+  } catch (err) {
+    console.error("Failed to initialize Firebase auth", err);
+    loginBtn.disabled = true;
+    loginBtn.title = "Firebase auth failed to initialize";
+  }
+}
 
 function computeMaxLen() {
   return Math.max(5, ...names.map((n) => n.length));
@@ -486,6 +577,7 @@ board.textContent = padToMax("READY");
 updateStartEnabled();
 updateWinnerStatus();
 renderWeeklyList();
+initFirebaseAuth();
 
 // Weekly winners rendering as two-column table (Week | Name)
 function getISOWeekInfo(ts) {
