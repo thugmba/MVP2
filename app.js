@@ -60,6 +60,10 @@ const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const classUsageNotice = document.getElementById("classUsageNotice");
 const qrOverlay = document.getElementById("qrOverlay");
 const qrOverlayCard = qrOverlay ? qrOverlay.querySelector(".qr-overlay-card") : null;
+const confirmWeeklyRemovalPanel = document.getElementById("confirmWeeklyRemovalPanel");
+const confirmWeeklyRemovalBtn = document.getElementById("confirmWeeklyRemovalBtn");
+const cancelWeeklyRemovalBtn = document.getElementById("cancelWeeklyRemovalBtn");
+const confirmWeeklyRemovalName = document.getElementById("removeDialogWinner");
 
 let firebaseAuth = null;
 let firebaseGoogleProvider = null;
@@ -83,6 +87,7 @@ const latestClassUsageMetrics = {
   studentCount: null,
   classCount: null,
 };
+let pendingWeeklyRemoval = null;
 
 function getLatestGlobalStats() {
   if (typeof window === "undefined") return {};
@@ -102,6 +107,31 @@ function setLatestGlobalStats(partial) {
   }
   window.__latestGlobalStats = nextStats;
   updateClassUsageNoticeDisplay();
+}
+
+function openWeeklyRemovalDialog(entry) {
+  if (!confirmWeeklyRemovalPanel || !confirmWeeklyRemovalBtn || !cancelWeeklyRemovalBtn) {
+    return false;
+  }
+  const rankingKey = getActiveRankingKey();
+  pendingWeeklyRemoval = {
+    rankingKey,
+    ts: entry.ts,
+  };
+  if (confirmWeeklyRemovalName) {
+    const label = entry.label ? `${entry.label} — ` : "";
+    const displayName = entry.name || "this winner";
+    confirmWeeklyRemovalName.textContent = `${label}${displayName}`;
+  }
+  confirmWeeklyRemovalPanel.hidden = false;
+  return true;
+}
+
+function closeWeeklyRemovalDialog() {
+  if (confirmWeeklyRemovalPanel) {
+    confirmWeeklyRemovalPanel.hidden = true;
+  }
+  pendingWeeklyRemoval = null;
 }
 
 function getSelectedClass() {
@@ -481,8 +511,10 @@ function createSettingsMessage(text, type = "info") {
 function renderClassList() {
   if (!classListEl) return;
   classListEl.innerHTML = "";
+  closeWeeklyRemovalDialog();
 
   const showListMessage = (text, type) => {
+    closeWeeklyRemovalDialog();
     classListEl.appendChild(createSettingsMessage(text, type));
     renderClassDetail();
     updateClassSelector();
@@ -1988,13 +2020,18 @@ if (weeklyListEl) {
     const idx = list.findIndex((entry) => entry && typeof entry.ts === "number" && entry.ts === ts);
     if (idx === -1) return;
     const entry = list[idx];
-    const name = entry && typeof entry.name === "string" ? entry.name : "this winner";
-    const ok = confirm(`Remove ${name} from the winners list?`);
-    if (!ok) return;
-    list.splice(idx, 1);
-    void persistRankingStore();
-    void updateGlobalMvpTotals();
-    renderWeeklyList();
+    const labelEl = item.querySelector(".weekly-week");
+    const displayLabel = labelEl ? labelEl.textContent : null;
+    const displayName = entry && typeof entry.name === "string" ? entry.name : "this winner";
+
+    if (!openWeeklyRemovalDialog({ ts, name: displayName, label: displayLabel })) {
+      const ok = confirm(`Remove ${displayName} from the winners list?`);
+      if (!ok) return;
+      list.splice(idx, 1);
+      void persistRankingStore();
+      void updateGlobalMvpTotals();
+      renderWeeklyList();
+    }
   });
 }
 
@@ -2033,5 +2070,30 @@ if (clearWeeklyBtn && confirmResetPanel && confirmResetBtn && cancelResetBtn) {
     void updateGlobalMvpTotals();
     renderWeeklyList();
     confirmResetPanel.hidden = true;
+  });
+}
+
+if (cancelWeeklyRemovalBtn) {
+  cancelWeeklyRemovalBtn.addEventListener("click", () => {
+    closeWeeklyRemovalDialog();
+  });
+}
+
+if (confirmWeeklyRemovalBtn) {
+  confirmWeeklyRemovalBtn.addEventListener("click", () => {
+    if (!pendingWeeklyRemoval) {
+      closeWeeklyRemovalDialog();
+      return;
+    }
+    const { rankingKey, ts } = pendingWeeklyRemoval;
+    const list = getRankingEntriesForKey(rankingKey);
+    const idx = list.findIndex((entry) => entry && typeof entry.ts === "number" && entry.ts === ts);
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      void persistRankingStore();
+      void updateGlobalMvpTotals();
+      renderWeeklyList();
+    }
+    closeWeeklyRemovalDialog();
   });
 }

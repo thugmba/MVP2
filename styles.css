@@ -459,6 +459,16 @@ body {
   box-shadow: 0 20px 40px rgba(0,0,0,0.35);
 }
 
+.dialog-highlight {
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
 .reset-panel-card .dialog-actions {
   display: flex;
   justify-content: flex-end;
