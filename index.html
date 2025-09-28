@@ -9,12 +9,17 @@
   <body>
     <main class="app">
       <header class="top-bar" aria-live="polite">
-        <div class="auth-panel">
-          <button id="loginBtn" class="btn login-btn" type="button" aria-label="Login with Google">Login</button>
-          <button id="settingsBtn" class="btn btn-secondary settings-btn" type="button" aria-label="Open user settings" hidden>Settings</button>
+        <div class="top-bar-left">
+          <div class="auth-panel">
+            <button id="loginBtn" class="btn login-btn" type="button" aria-label="Sign in with Google">Sign in with Google</button>
+            <button id="settingsBtn" class="btn btn-secondary settings-btn" type="button" aria-label="Open user settings" hidden>Settings</button>
+          </div>
+          <div class="class-picker-wrap">
+            <select id="classSelector" class="class-picker" hidden aria-label="Select class"></select>
+          </div>
         </div>
-        <div class="class-picker-wrap">
-          <select id="classSelector" class="class-picker" hidden aria-label="Select class"></select>
+        <div class="top-bar-right">
+          <button id="helpBtn" class="btn btn-secondary help-btn" type="button" aria-label="Open help">Help</button>
         </div>
       </header>
       <h1 class="title">🏆 Today's MVP Award 🎉</h1>

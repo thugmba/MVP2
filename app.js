@@ -49,6 +49,7 @@ const winnerStatus = document.getElementById("winnerStatus");
 const loginBtn = document.getElementById("loginBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsDialog = document.getElementById("settingsDialog");
+const helpBtn = document.getElementById("helpBtn");
 const classListEl = document.getElementById("classList");
 const classDetailEl = document.getElementById("classDetail");
 const classSelector = document.getElementById("classSelector");
@@ -432,8 +433,8 @@ function updateLoginButton() {
     loginBtn.textContent = display ? `Sign out (${display})` : "Sign out";
     loginBtn.title = display ? `Signed in as ${display}` : "Signed in";
   } else {
-    loginBtn.textContent = "Login with Google";
-    loginBtn.title = "Login with Google";
+    loginBtn.textContent = "Sign in with Google";
+    loginBtn.title = "Sign in with Google";
   }
   ensureSettingsVisibility();
 }
@@ -1833,6 +1834,12 @@ if (settingsBtn) {
       return;
     }
     openSettingsDialog();
+  });
+}
+
+if (helpBtn) {
+  helpBtn.addEventListener("click", () => {
+    window.location.href = "help.html";
   });
 }
 

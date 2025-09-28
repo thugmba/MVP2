@@ -27,6 +27,11 @@ service cloud.firestore {
       allow delete, list: if false;
     }
 
+    match /feedback/{feedbackId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

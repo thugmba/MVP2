@@ -25,6 +25,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  padding: 1rem 2rem 0.75rem;
   gap: 1.25rem;
   z-index: 1500;
   background: radial-gradient(1200px 800px at 50% -10%, #2a0c0c 0%, var(--bg) 60%);
@@ -32,6 +33,19 @@ body {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
   flex-wrap: wrap;
   align-content: flex-start;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.top-bar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
 }
 
 .auth-panel {
@@ -46,6 +60,11 @@ body {
 }
 
 .settings-btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.95rem;
+}
+
+.help-btn {
   padding: 0.55rem 1rem;
   font-size: 0.95rem;
 }
@@ -74,6 +93,11 @@ body {
 
 .class-picker.is-empty {
   display: none;
+}
+
+.help-btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.95rem;
 }
 
 .app {
