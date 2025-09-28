@@ -1,4 +1,4 @@
-// Names to pick from. Can be set via dialog and saved to localStorage.
+// Names to pick from. Can be set via dialog and persisted to Firestore.
 const DEFAULT_NAMES = [
   "Oscar",
   "Lando",
@@ -22,20 +22,19 @@ const DEFAULT_NAMES = [
   "Franco",
 ];
 
-const STORAGE_KEY = "flightBoardNames";
-const WINNER_KEY = "flightBoardFixedWinner";
-const RANKING_KEY = "flightBoardRanking";
 const GLOBAL_STATS_DOC_ID = "globalUsage";
 
-let names = loadNames();
-let fixedWinner = loadFixedWinner();
-let rankingStore = loadRankingStore();
+let names = DEFAULT_NAMES.slice();
+let fixedWinner = null;
+let defaultFixedWinner = null;
+let rankingStore = { default: [] };
 
 // Compute a fixed board width using the longest name to avoid layout shifts
 let maxLen = computeMaxLen();
 
 const board = document.getElementById("board");
 const startBtn = document.getElementById("startBtn");
+if (startBtn) startBtn.disabled = true;
 const setNamesBtn = document.getElementById("setNamesBtn");
 const namesDialog = document.getElementById("namesDialog");
 const namesTextarea = document.getElementById("namesTextarea");
@@ -58,6 +57,8 @@ const studentListTextarea = document.getElementById("studentListTextarea");
 const addClassBtn = document.getElementById("addClassBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const classUsageNotice = document.getElementById("classUsageNotice");
+const qrOverlay = document.getElementById("qrOverlay");
+const qrOverlayCard = qrOverlay ? qrOverlay.querySelector(".qr-overlay-card") : null;
 
 let firebaseAuth = null;
 let firebaseGoogleProvider = null;
@@ -71,6 +72,8 @@ let selectedClassId = null;
 let editingClassId = null;
 let totalClassCount = null;
 let classCountFetchInFlight = false;
+let previousFocus = null;
+let qrOverlayVisible = false;
 
 function getSelectedClass() {
   if (!selectedClassId) return null;
@@ -101,15 +104,79 @@ function getDisplayWidth() {
 function reconcileFixedWinnerWithPool() {
   if (!fixedWinner) {
     updateWinnerStatus();
+    updateStartEnabled();
     return;
   }
   const pool = getActiveNamePool();
   const exists = pool.some((n) => n.toUpperCase() === fixedWinner.toUpperCase());
   if (!exists) {
-    fixedWinner = null;
-    saveFixedWinner();
+    updateActiveWinner(null, { persist: true, skipReconcile: true });
+    return;
   }
   updateWinnerStatus();
+}
+
+function showQrOverlay() {
+  if (!qrOverlay || qrOverlayVisible) return;
+  previousFocus = document.activeElement && typeof document.activeElement.focus === "function" ? document.activeElement : null;
+  qrOverlay.hidden = false;
+  qrOverlay.setAttribute("aria-hidden", "false");
+  qrOverlayVisible = true;
+  if (typeof qrOverlay.focus === "function") {
+    qrOverlay.focus();
+  }
+}
+
+function hideQrOverlay() {
+  if (!qrOverlay || !qrOverlayVisible) return;
+  qrOverlay.setAttribute("aria-hidden", "true");
+  qrOverlay.hidden = true;
+  qrOverlayVisible = false;
+  if (previousFocus && typeof previousFocus.focus === "function") {
+    try {
+      previousFocus.focus();
+    } catch {}
+  }
+  previousFocus = null;
+}
+
+function handleGlobalKeydown(event) {
+  if (event.defaultPrevented || event.repeat) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const key = event.key;
+  if (!key) return;
+  if (key === "Escape") {
+    if (qrOverlayVisible) {
+      hideQrOverlay();
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    return;
+  }
+
+  const target = event.target;
+  const tag = target && target.tagName ? target.tagName.toUpperCase() : "";
+  const isEditable = target && (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable);
+  if (isEditable) return;
+
+  if (key.toLowerCase() === "q") {
+    showQrOverlay();
+    event.preventDefault();
+  }
+}
+
+if (qrOverlay) {
+  qrOverlay.addEventListener("click", (event) => {
+    if (event.target === qrOverlay) {
+      hideQrOverlay();
+    }
+  });
+  if (qrOverlayCard) {
+    qrOverlayCard.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+  }
+  document.addEventListener("keydown", handleGlobalKeydown);
 }
 
 function updateClassUsageNoticeDisplay() {
@@ -311,9 +378,8 @@ function renderClassList() {
     classListEl.appendChild(createSettingsMessage(text, type));
     renderClassDetail();
     updateClassSelector();
+    syncActiveWinnerFromSelection({ persist: false });
     renderWeeklyList();
-    updateStartEnabled();
-    reconcileFixedWinnerWithPool();
   };
 
   if (!currentUserId) {
@@ -386,9 +452,8 @@ function renderClassList() {
 
   renderClassDetail();
   updateClassSelector();
-  updateStartEnabled();
+  syncActiveWinnerFromSelection({ persist: false });
   renderWeeklyList();
-  reconcileFixedWinnerWithPool();
 }
 
 function renderClassDetail() {
@@ -620,7 +685,6 @@ async function deleteClass(cls, button) {
     const rankingKey = getRankingKeyForClass(cls.id);
     if (rankingStore[rankingKey]) {
       delete rankingStore[rankingKey];
-      saveRankingStore();
     }
     renderClassList();
     fetchGlobalClassCount();
@@ -677,13 +741,24 @@ async function fetchClassesForUser(uid) {
     const snapshot = await col.get();
     if (token !== classesFetchToken || uid !== currentUserId) return;
     const items = [];
+    const seenRankingKeys = new Set();
     snapshot.forEach((doc) => {
       const data = doc.data() || {};
       const name = typeof data.name === "string" ? data.name.trim() : "";
       const students = sanitizeStudentList(data.students);
       if (!name || !students.length) return;
-      items.push({ id: doc.id, name, students });
+      const rankingKey = getRankingKeyForClass(doc.id);
+      const weeklyWinners = normalizeRankingArray(data.weeklyWinners);
+      rankingStore[rankingKey] = weeklyWinners;
+      seenRankingKeys.add(rankingKey);
+      const currentWinner = typeof data.currentWinner === "string" ? data.currentWinner.trim() : null;
+      items.push({ id: doc.id, name, students, currentWinner });
     });
+    for (const key of Object.keys(rankingStore)) {
+      if (key.startsWith("class:") && !seenRankingKeys.has(key)) {
+        delete rankingStore[key];
+      }
+    }
     items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     userClasses = items;
     if (!userClasses.some((entry) => entry.id === selectedClassId)) {
@@ -768,6 +843,7 @@ function initFirebaseAuth() {
         classesError = null;
         classesLoading = false;
         selectedClassId = null;
+        resetUserStateToDefaults();
         closeSettingsDialog();
         updateLoginButton();
         renderClassList();
@@ -779,6 +855,7 @@ function initFirebaseAuth() {
       updateLoginButton();
       if (classNameInput) classNameInput.value = "";
       if (studentListTextarea) studentListTextarea.value = "";
+      void loadUserState(currentUserId);
       void fetchClassesForUser(currentUserId);
     });
     firebaseAuth.onIdTokenChanged(() => {
@@ -797,43 +874,6 @@ function computeMaxLen() {
   return Math.max(5, ...names.map((n) => n.length));
 }
 
-function loadNames() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.every((s) => typeof s === "string")) {
-        return arr;
-      }
-    }
-  } catch {}
-  return DEFAULT_NAMES.slice();
-}
-
-function saveNamesToStorage() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(names));
-  } catch {}
-}
-
-function loadFixedWinner() {
-  try {
-    const s = localStorage.getItem(WINNER_KEY);
-    if (typeof s === "string" && s.trim().length) return s;
-  } catch {}
-  return null;
-}
-
-function saveFixedWinner() {
-  try {
-    if (fixedWinner && fixedWinner.trim()) {
-      localStorage.setItem(WINNER_KEY, fixedWinner);
-    } else {
-      localStorage.removeItem(WINNER_KEY);
-    }
-  } catch {}
-}
-
 function normalizeRankingArray(value) {
   const out = [];
   if (Array.isArray(value)) {
@@ -841,41 +881,239 @@ function normalizeRankingArray(value) {
       if (typeof item === "string") {
         out.push({ name: item, ts: Date.now() });
       } else if (item && typeof item.name === "string") {
-        out.push({ name: item.name, ts: typeof item.ts === "number" ? item.ts : Date.now() });
+        const rawTs = item.ts;
+        let ts;
+        if (typeof rawTs === "number" && Number.isFinite(rawTs)) {
+          ts = rawTs;
+        } else if (rawTs && typeof rawTs.toMillis === "function") {
+          ts = rawTs.toMillis();
+        } else {
+          ts = Date.now();
+        }
+        out.push({ name: item.name, ts });
       }
     }
   }
   return out;
 }
 
-function loadRankingStore() {
-  try {
-    const raw = localStorage.getItem(RANKING_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const map = { default: normalizeRankingArray(parsed) };
-        localStorage.setItem(RANKING_KEY, JSON.stringify(map));
-        return map;
-      }
-      if (parsed && typeof parsed === "object") {
-        const out = {};
-        for (const [key, value] of Object.entries(parsed)) {
-          out[key] = normalizeRankingArray(value);
-        }
-        if (!out.default) out.default = [];
-        localStorage.setItem(RANKING_KEY, JSON.stringify(out));
-        return out;
-      }
+function normalizeRankingStore(value) {
+  const out = {};
+  if (value && typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = normalizeRankingArray(entry);
     }
-  } catch {}
-  return { default: [] };
+  }
+  if (!out.default) out.default = [];
+  return out;
 }
 
-function saveRankingStore() {
+function sanitizeNameListForState(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    if (typeof item === "string") {
+      const trimmed = item.trim();
+      if (trimmed.length) out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+function getRankingEntriesForStorage(list) {
+  const out = [];
+  if (!Array.isArray(list)) return out;
+  for (const entry of list) {
+    if (!entry) continue;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (!name) continue;
+    const tsValue = entry.ts;
+    let ts;
+    if (typeof tsValue === "number" && Number.isFinite(tsValue)) {
+      ts = tsValue;
+    } else if (tsValue && typeof tsValue.toMillis === "function") {
+      ts = tsValue.toMillis();
+    } else {
+      ts = Date.now();
+    }
+    out.push({ name, ts });
+  }
+  return out;
+}
+
+function getCurrentWinnerForStart() {
+  if (selectedClassId) {
+    const cls = getSelectedClass();
+    if (cls && typeof cls.currentWinner === "string") {
+      const trimmed = cls.currentWinner.trim();
+      if (trimmed.length) return trimmed;
+    }
+    return null;
+  }
+  if (typeof fixedWinner === "string") {
+    const trimmed = fixedWinner.trim();
+    if (trimmed.length) return trimmed;
+  }
+  return null;
+}
+
+function resetUserStateToDefaults({ render = true } = {}) {
+  names = DEFAULT_NAMES.slice();
+  fixedWinner = null;
+  defaultFixedWinner = null;
+  rankingStore = { default: [] };
+  maxLen = computeMaxLen();
+  if (!render) return;
+  board.textContent = padToMax("READY");
+  updateStartEnabled();
+  reconcileFixedWinnerWithPool();
+  updateWinnerStatus();
+  renderWeeklyList();
+}
+
+function getUserDocRef(uid = currentUserId) {
+  if (!firebaseDb || !uid) return null;
+  return firebaseDb.collection("users").doc(uid);
+}
+
+function persistUserState(partial) {
+  if (!firebaseDb || !currentUserId) return Promise.resolve();
+  const docRef = getUserDocRef();
+  if (!docRef || !partial || typeof partial !== "object") return Promise.resolve();
+  const payload = {};
+  if (Object.prototype.hasOwnProperty.call(partial, "names")) {
+    payload.names = Array.isArray(partial.names)
+      ? partial.names
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter((item) => item.length)
+      : [];
+  }
+  if (Object.prototype.hasOwnProperty.call(partial, "fixedWinner")) {
+    if (typeof partial.fixedWinner === "string") {
+      const trimmed = partial.fixedWinner.trim();
+      payload.fixedWinner = trimmed.length ? trimmed : null;
+    } else {
+      payload.fixedWinner = null;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(partial, "rankingStore")) {
+    try {
+      payload.rankingStore = partial.rankingStore
+        ? JSON.parse(JSON.stringify(partial.rankingStore))
+        : { default: [] };
+    } catch {
+      payload.rankingStore = { default: [] };
+    }
+  }
+  if (!Object.keys(payload).length) return Promise.resolve();
+  return docRef
+    .set(payload, { merge: true })
+    .catch((err) => {
+      console.error("Failed to persist user state", err);
+    });
+}
+
+function persistNames() {
+  void persistUserState({ names });
+}
+
+function persistFixedWinner() {
+  defaultFixedWinner = fixedWinner;
+  void persistUserState({ fixedWinner });
+}
+
+function persistRankingStore(classId = selectedClassId) {
+  if (!firebaseDb || !currentUserId) return Promise.resolve();
+  const key = getRankingKeyForClass(classId);
+  const list = getRankingEntriesForKey(key);
+  const sanitized = getRankingEntriesForStorage(list);
+  list.splice(0, list.length, ...sanitized);
+  if (!classId) {
+    return persistUserState({ rankingStore: { default: sanitized } });
+  }
+  const col = getClassesCollection();
+  if (!col) return Promise.resolve();
+  return col
+    .doc(classId)
+    .set({ weeklyWinners: sanitized }, { merge: true })
+    .catch((err) => {
+      console.error("Failed to persist class ranking", err);
+    });
+}
+
+function persistClassCurrentWinner(classId, winner) {
+  if (!firebaseDb || !currentUserId || !classId) return Promise.resolve();
+  const col = getClassesCollection();
+  if (!col) return Promise.resolve();
+  const value = typeof winner === "string" ? winner.trim() : "";
+  const payload = { currentWinner: value.length ? value : null };
+  return col
+    .doc(classId)
+    .set(payload, { merge: true })
+    .catch((err) => {
+      console.error("Failed to persist class winner", err);
+    });
+}
+
+function updateActiveWinner(nextWinner, { persist = true, skipReconcile = false } = {}) {
+  const cls = getSelectedClass();
+  const trimmed = typeof nextWinner === "string" ? nextWinner.trim() : "";
+  fixedWinner = trimmed.length ? trimmed : null;
+  if (cls) {
+    cls.currentWinner = fixedWinner;
+    if (persist) void persistClassCurrentWinner(cls.id, fixedWinner);
+  } else if (persist) {
+    persistFixedWinner();
+  } else {
+    defaultFixedWinner = fixedWinner;
+  }
+  updateWinnerStatus();
+  updateStartEnabled();
+  if (!skipReconcile) reconcileFixedWinnerWithPool();
+}
+
+function syncActiveWinnerFromSelection({ persist = false } = {}) {
+  if (selectedClassId) {
+    const cls = getSelectedClass();
+    const winner = cls && typeof cls.currentWinner === "string" ? cls.currentWinner : null;
+    updateActiveWinner(winner, { persist, skipReconcile: true });
+  } else {
+    updateActiveWinner(defaultFixedWinner, { persist: false, skipReconcile: true });
+  }
+  reconcileFixedWinnerWithPool();
+}
+
+async function loadUserState(uid) {
+  resetUserStateToDefaults({ render: false });
+  if (!firebaseDb || !uid) {
+    board.textContent = padToMax("READY");
+    updateStartEnabled();
+    updateWinnerStatus();
+    renderWeeklyList();
+    return;
+  }
   try {
-    localStorage.setItem(RANKING_KEY, JSON.stringify(rankingStore));
-  } catch {}
+    const docRef = getUserDocRef(uid);
+    const snapshot = docRef ? await docRef.get() : null;
+    const data = snapshot && snapshot.exists ? snapshot.data() || {} : {};
+    const fetchedNames = sanitizeNameListForState(data.names);
+    names = fetchedNames.length ? fetchedNames : DEFAULT_NAMES.slice();
+    fixedWinner = typeof data.fixedWinner === "string" && data.fixedWinner.trim().length ? data.fixedWinner.trim() : null;
+    defaultFixedWinner = fixedWinner;
+    rankingStore = normalizeRankingStore(data.rankingStore);
+    maxLen = computeMaxLen();
+    reconcileFixedWinnerWithPool();
+    board.textContent = padToMax("READY");
+    updateStartEnabled();
+    updateWinnerStatus();
+    renderWeeklyList();
+    if (!snapshot || !snapshot.exists) {
+      await persistUserState({ names, fixedWinner, rankingStore });
+    }
+  } catch (err) {
+    console.error("Failed to load user state", err);
+    resetUserStateToDefaults();
+  }
 }
 
 function getRankingKeyForClass(classId) {
@@ -898,11 +1136,11 @@ function getActiveRankingEntries() {
 function addRankingEntry(name) {
   const list = getActiveRankingEntries();
   list.push({ name, ts: Date.now() });
-  saveRankingStore();
+  void persistRankingStore();
   renderWeeklyList();
 }
 
-// CSV download removed per request; ranking persists only in localStorage
+// CSV download removed per request; ranking persists in Firestore
 
 // Audio setup (Web Audio API)
 let audioCtx;
@@ -1119,6 +1357,7 @@ function revealWinner(name) {
         playCongrats();
         // Record winner and update/download ranking CSV
         addRankingEntry(name);
+        updateActiveWinner(null);
         setTimeout(() => {
           isBusy = false;
           updateStartEnabled();
@@ -1128,14 +1367,74 @@ function revealWinner(name) {
   }
 }
 
-startBtn.addEventListener("click", () => {
+async function handleStartButtonClick() {
+  if (isBusy) return;
   const ms = Math.round((shuffleSeconds || 5) * 1000);
+  let winner = getCurrentWinnerForStart();
+
+  if (selectedClassId) {
+    const col = getClassesCollection();
+    if (!col) {
+      alert("Firestore is unavailable. Cannot load the current winner.");
+      updateStartEnabled();
+      return;
+    }
+    try {
+      const snapshot = await col.doc(selectedClassId).get();
+      const data = snapshot && snapshot.exists ? snapshot.data() || {} : {};
+      const storedWinner = typeof data.currentWinner === "string" ? data.currentWinner.trim() : "";
+      const cls = getSelectedClass();
+      if (storedWinner.length) {
+        winner = storedWinner;
+        if (cls) cls.currentWinner = storedWinner;
+      } else {
+        winner = cls && typeof cls.currentWinner === "string" && cls.currentWinner.trim().length
+          ? cls.currentWinner.trim()
+          : null;
+      }
+    } catch (err) {
+      console.error("Failed to read class winner", err);
+      alert("Failed to load the current winner. Please try again.");
+      updateStartEnabled();
+      return;
+    }
+  }
+
+  if (!winner) {
+    alert("Select a winner before starting the shuffle.");
+    updateStartEnabled();
+    return;
+  }
+
+  const pool = getActiveNamePool();
+  if (!pool.length) {
+    alert("Add students to the class before starting.");
+    updateStartEnabled();
+    return;
+  }
+  const winnerExists = pool.some((n) => n.toUpperCase() === winner.toUpperCase());
+  if (!winnerExists) {
+    alert("The selected winner is not in this class. Please choose another winner.");
+    updateActiveWinner(null, { persist: true });
+    return;
+  }
+
+  updateActiveWinner(winner, { persist: false });
   startShuffleAndPick({ shuffleMs: ms });
-});
+}
+
+if (startBtn) {
+  startBtn.addEventListener("click", () => {
+    void handleStartButtonClick();
+  });
+}
 
 // Ensure stable width right away
 function updateStartEnabled() {
-  startBtn.disabled = isBusy || getActiveNamePool().length === 0;
+  if (!startBtn) return;
+  const hasNames = getActiveNamePool().length > 0;
+  const winner = getCurrentWinnerForStart();
+  startBtn.disabled = isBusy || !hasNames || !winner;
 }
 
 function openNamesDialog() {
@@ -1175,16 +1474,15 @@ function parseNames(text) {
   return out;
 }
 
-function applyNames(newNames) {
+function applyNames(newNames, { persist = true } = {}) {
   names = newNames.slice();
   maxLen = computeMaxLen();
-  saveNamesToStorage();
+  if (persist) persistNames();
   board.textContent = padToMax("READY");
   updateStartEnabled();
   // If the fixed winner no longer exists in the list, clear it
   if (fixedWinner && !names.some((n) => n.toUpperCase() === fixedWinner.toUpperCase())) {
-    fixedWinner = null;
-    saveFixedWinner();
+    updateActiveWinner(null, { persist, skipReconcile: true });
   }
   reconcileFixedWinnerWithPool();
 }
@@ -1223,9 +1521,7 @@ function openWinnerDialog() {
       btn.className = "name-btn";
       btn.textContent = name;
       btn.addEventListener("click", () => {
-        fixedWinner = name;
-        saveFixedWinner();
-        updateWinnerStatus();
+        updateActiveWinner(name);
         closeWinnerDialog();
       });
       winnerGrid.appendChild(btn);
@@ -1269,9 +1565,7 @@ function escapeHtml(s) {
 setWinnerBtn.addEventListener("click", openWinnerDialog);
 cancelWinnerBtn.addEventListener("click", closeWinnerDialog);
 clearWinnerBtn.addEventListener("click", () => {
-  fixedWinner = null;
-  saveFixedWinner();
-  updateWinnerStatus();
+  updateActiveWinner(null);
   closeWinnerDialog();
 });
 
@@ -1357,12 +1651,16 @@ if (addClassBtn) {
       } else {
         payload.createdAt = Date.now();
       }
+      payload.weeklyWinners = [];
       await docRef.set(payload);
-      userClasses.push({ id: docRef.id, name, students });
+      const rankingKey = getRankingKeyForClass(docRef.id);
+      rankingStore[rankingKey] = [];
+      userClasses.push({ id: docRef.id, name, students, currentWinner: null });
       userClasses.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       classesError = null;
       selectedClassId = docRef.id;
       renderClassList();
+      renderWeeklyList();
       fetchGlobalClassCount();
       void adjustGlobalUsageCount(1);
       if (classNameInput) classNameInput.value = "";
@@ -1441,7 +1739,7 @@ if (weeklyListEl) {
     const ok = confirm(`Remove ${name} from the winners list?`);
     if (!ok) return;
     list.splice(idx, 1);
-    saveRankingStore();
+    void persistRankingStore();
     renderWeeklyList();
   });
 }
@@ -1477,7 +1775,7 @@ if (clearWeeklyBtn && confirmResetPanel && confirmResetBtn && cancelResetBtn) {
   confirmResetBtn.addEventListener("click", () => {
     const key = getActiveRankingKey();
     rankingStore[key] = [];
-    saveRankingStore();
+    void persistRankingStore();
     renderWeeklyList();
     confirmResetPanel.hidden = true;
   });

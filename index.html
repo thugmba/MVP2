@@ -106,6 +106,13 @@
       </dialog>
 
     </main>
+    <div id="qrOverlay" class="qr-overlay" hidden aria-hidden="true" tabindex="-1">
+      <div class="qr-overlay-card" role="dialog" aria-modal="true" aria-labelledby="qrOverlayTitle">
+        <h2 class="qr-overlay-title" id="qrOverlayTitle">Scan to Open MVP</h2>
+        <img src="MVP_qr.png" alt="QR code that links to the MVP app" class="qr-overlay-image" />
+        <p class="qr-overlay-hint">Press Esc to close</p>
+      </div>
+    </div>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
