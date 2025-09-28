@@ -7,7 +7,15 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <button id="loginBtn" class="btn login-btn" type="button" aria-label="Login with Google">Login</button>
+    <header class="top-bar" aria-live="polite">
+      <div class="auth-panel">
+        <button id="loginBtn" class="btn login-btn" type="button" aria-label="Login with Google">Login</button>
+        <button id="settingsBtn" class="btn btn-secondary settings-btn" type="button" aria-label="Open user settings" hidden>Settings</button>
+      </div>
+      <div class="class-picker-wrap">
+        <select id="classSelector" class="class-picker" hidden aria-label="Select class"></select>
+      </div>
+    </header>
     <main class="app">
       <h1 class="title">🏆 Today's MVP Award 🎉</h1>
       <aside class="weekly" id="weeklyBox" aria-live="polite">
@@ -25,16 +33,28 @@
         </div>
         <button id="startBtn" class="btn start-btn-large" type="button" aria-label="Start shuffling and pick a name">Start</button>
         <div class="minor-controls">
-          <button id="setNamesBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Set the names list">Set Names</button>
           <button id="setWinnerBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Set the winner name" title="Set Winner">🏆</button>
-          <button id="clearWeeklyBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Clear weekly winners table">Clear Table</button>
+          <button id="clearWeeklyBtn" class="btn btn-secondary btn-sm" type="button" aria-label="Reset weekly winners">Reset Weekly Winners</button>
         </div>
         <div class="sub-controls" aria-label="Shuffle time control">
           <label for="shuffleRange" class="sub-label">Shuffle Time</label>
           <input id="shuffleRange" type="range" min="1" max="10" step="1" value="5" />
           <span id="shuffleValue" class="sub-value">5s</span>
         </div>
+        <p id="classUsageNotice" class="class-usage" hidden></p>
         <p class="hint" id="winnerStatus" aria-live="polite"></p>
+        <p class="site-footer">© 2025 Developed by <a href="https://thugmba.github.io/ialab/" target="_blank" rel="noopener">Innovation Analytics Laboratory</a> at Tunghai University</p>
+
+        <div id="confirmResetPanel" class="reset-panel" hidden>
+          <div class="reset-panel-card" role="dialog" aria-modal="true" aria-labelledby="resetDialogTitle">
+            <h2 class="dialog-title" id="resetDialogTitle">Reset Weekly Winners</h2>
+            <p class="dialog-subtitle">Clear all saved winners for this class? This cannot be undone.</p>
+            <div class="dialog-actions">
+              <button type="button" id="cancelResetBtn" class="btn btn-secondary btn-sm">Cancel</button>
+              <button type="button" id="confirmResetBtn" class="btn btn-danger btn-sm">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <dialog id="namesDialog" class="dialog">
@@ -55,14 +75,40 @@
           <p class="dialog-subtitle">Choose the predefined winner. Click a name below.</p>
           <div id="winnerGrid" class="name-grid"></div>
           <div class="dialog-actions">
-            <button type="button" id="cancelWinnerBtn" class="btn btn-secondary">Close</button>
-            <button type="button" id="clearWinnerBtn" class="btn btn-secondary">Clear Winner</button>
+            <button type="button" id="cancelWinnerBtn" class="btn btn-secondary btn-sm">Close</button>
+            <button type="button" id="clearWinnerBtn" class="btn btn-secondary btn-sm">Clear Winner</button>
           </div>
         </form>
       </dialog>
+
+      <dialog id="settingsDialog" class="dialog settings-dialog">
+        <form method="dialog" class="dialog-body settings-body" id="settingsForm">
+          <h2 class="dialog-title">Classes</h2>
+          <p class="dialog-subtitle">Manage your classes and student lists.</p>
+          <div class="settings-columns">
+            <section class="class-list-panel">
+              <div id="classList" class="class-list" aria-live="polite" role="listbox" aria-label="Classes"></div>
+            </section>
+            <section id="classDetail" class="class-detail-panel" aria-live="polite"></section>
+          </div>
+          <fieldset class="settings-add">
+            <legend>Add New Class</legend>
+            <label class="settings-label" for="classNameInput">Course Name</label>
+            <input id="classNameInput" class="settings-input" type="text" placeholder="Intro to Robotics" />
+            <label class="settings-label" for="studentListTextarea">Student List</label>
+            <textarea id="studentListTextarea" class="settings-textarea" rows="6" placeholder="Alice&#10;Bob&#10;Charlie"></textarea>
+          </fieldset>
+          <div class="dialog-actions settings-actions">
+            <button type="button" id="closeSettingsBtn" class="btn btn-secondary">Back</button>
+            <button type="button" id="addClassBtn" class="btn btn-sm">Add Class</button>
+          </div>
+        </form>
+      </dialog>
+
     </main>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <script>
       window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
         apiKey: "AIzaSyD225v6FB15Syii_UGlulV-ttbQT1A7zF8",

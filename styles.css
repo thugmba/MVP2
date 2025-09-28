@@ -20,13 +20,69 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
+.top-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 1rem 2rem 0.75rem;
+  gap: 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 1500;
+  background: radial-gradient(1200px 800px at 50% -10%, #2a0c0c 0%, var(--bg) 60%);
+}
+
+.auth-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .login-btn {
-  position: fixed;
-  top: 1rem;
-  left: 1rem;
-  z-index: 1100;
-  padding: 0.65rem 1.1rem;
+  padding: 0.55rem 1rem;
   font-size: 0.95rem;
+}
+
+.settings-btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.95rem;
+}
+
+.class-picker-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: -6px;
+}
+
+.class-picker {
+  min-width: 200px;
+  max-width: 240px;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  appearance: none;
+  outline: none;
+  display: block;
+}
+
+.class-picker.is-empty {
+  display: none;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 2rem;
 }
 
 .app {
@@ -56,6 +112,7 @@ body {
   gap: 0.8rem;
   flex: 1 1 560px;
   min-width: min(92vw, 560px);
+  position: relative;
 }
 
 .title {
@@ -86,12 +143,13 @@ body {
     0 10px 30px rgba(220, 0, 0, 0.25),
     0 2px 8px rgba(0,0,0,0.4);
   text-shadow: 0 0 18px rgba(220, 0, 0, 0.35);
+  position: relative;
+  z-index: 0;
 }
 
 .btn {
   appearance: none;
   border: none;
-  padding: 0.9rem 1.25rem;
   border-radius: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -112,6 +170,12 @@ body {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255,255,255,0.12) inset;
 }
 
+.btn-danger {
+  background: linear-gradient(180deg, #ff5b5b, #d60000);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(214, 0, 0, 0.35), 0 1px 0 rgba(255,255,255,0.25) inset;
+}
+
 .hint {
   margin: 0.25rem 0 0;
   font-size: 0.9rem;
@@ -130,7 +194,7 @@ body {
   margin: 0.8rem auto 0;
   width: clamp(180px, 30%, 360px);
   padding: clamp(1rem, 2.8vw, 1.75rem) clamp(1.4rem, 3.6vw, 2.25rem);
-  font-size: clamp(1.25rem, 3vw, 2rem);
+  font-size: clamp(1.5rem, 3.6vw, 2.4rem);
   border-radius: 999px;
   box-shadow: 0 10px 26px rgba(220,0,0,0.45), 0 2px 0 rgba(255,255,255,0.15) inset;
 }
@@ -143,8 +207,19 @@ body {
   gap: 0.6rem;
   color: var(--subtle);
 }
+
 .sub-label { font-weight: 600; letter-spacing: 0.04em; }
 .sub-value { min-width: 2.5ch; text-align: right; color: var(--text); font-weight: 700; }
+
+.class-usage {
+  margin: 0.3rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: center;
+}
+
 
 /* Dialog styles */
 .dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
@@ -172,6 +247,222 @@ body {
 }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.8rem 0.1rem 0.9rem; }
 
+.settings-dialog { width: min(92vw, 640px); }
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.class-list-panel {
+  flex: 0 0 220px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.class-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.class-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.65rem 0.75rem;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.class-item-name { font-size: 1rem; }
+
+.class-item-count {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--subtle);
+}
+
+.class-item:hover { background: rgba(255, 255, 255, 0.08); }
+
+.class-item.selected {
+  border-color: rgba(220, 0, 0, 0.65);
+  box-shadow: 0 0 0 1px rgba(220, 0, 0, 0.35);
+  background: rgba(220, 0, 0, 0.18);
+}
+
+.class-detail-panel {
+  flex: 1 1 320px;
+  min-width: 260px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.class-detail-panel h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.class-detail-meta {
+  margin: 0;
+  color: var(--subtle);
+  font-size: 0.9rem;
+}
+
+.class-detail-message {
+  color: var(--subtle);
+  font-style: italic;
+}
+
+.class-detail-error { color: #ff9090; }
+
+.student-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.class-detail-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.class-edit-panel {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.class-edit-actions {
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0;
+}
+
+.class-detail-actions .btn,
+.class-edit-actions .btn,
+.class-edit-actions .btn.btn-secondary {
+  height: 2.45rem;
+  padding: 0 1.1rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.reset-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  padding: 1rem;
+  z-index: 2200;
+}
+
+.reset-panel[hidden] {
+  display: none;
+}
+
+.reset-panel-card {
+  width: min(320px, 90%);
+  background: radial-gradient(1200px 800px at 50% -10%, #2a0c0c 0%, var(--bg) 60%);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+}
+
+.reset-panel-card .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0;
+  margin-top: 1rem;
+}
+
+.settings-message {
+  color: var(--subtle);
+  font-size: 0.9rem;
+}
+
+.settings-message.error { color: #ff9090; }
+
+.settings-add {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-add legend {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--subtle);
+}
+
+.settings-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.settings-input,
+.settings-textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(13, 20, 27, 0.9);
+  color: var(--text);
+  padding: 0.6rem;
+  font-size: 0.95rem;
+}
+
+.settings-textarea {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.settings-actions {
+  justify-content: space-between;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* Weekly winners (F1-style) */
 .weekly {
   position: fixed;
@@ -184,6 +475,26 @@ body {
   border-radius: 14px;
   padding: 0.75rem 0.75rem 0.5rem;
   box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  font-size: 150%;
+  z-index: 2000;
+}
+
+.site-footer {
+  margin: 2rem 0 1.5rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.site-footer a {
+  color: rgba(255, 255, 255, 0.72);
+  text-decoration: underline;
+}
+
+.site-footer a:hover {
+  color: #ffffff;
 }
 
 .weekly-title {
@@ -204,7 +515,7 @@ body {
 
 .weekly-head {
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
+  grid-template-columns: 0.8fr 1.2fr;
   gap: 0.5rem;
   align-items: center;
   padding: 0.45rem 0.6rem;
@@ -234,7 +545,7 @@ body {
 
 .weekly-item {
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
+  grid-template-columns: 0.8fr 1.2fr;
   align-items: center;
   gap: 0.75rem;
   padding: 0.55rem 0.7rem;

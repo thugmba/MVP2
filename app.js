@@ -1,25 +1,35 @@
 // Names to pick from. Can be set via dialog and saved to localStorage.
 const DEFAULT_NAMES = [
-  "Alice",
-  "Bob",
-  "Charlie",
-  "Diana",
-  "Eve",
-  "Frank",
-  "Grace",
-  "Heidi",
-  "Ivan",
-  "Judy",
+  "Oscar",
+  "Lando",
+  "Max",
+  "George",
+  "Charles",
+  "Lewis",
+  "Kimi",
+  "Alexander",
+  "Isack",
+  "Nico",
+  "Lance",
+  "Carlos",
+  "Liam",
+  "Fernando",
+  "Esteban",
+  "Pierre",
+  "Yuki",
+  "Gabriel",
+  "Oliver",
+  "Franco",
 ];
 
 const STORAGE_KEY = "flightBoardNames";
 const WINNER_KEY = "flightBoardFixedWinner";
 const RANKING_KEY = "flightBoardRanking";
+const GLOBAL_STATS_DOC_ID = "globalUsage";
 
 let names = loadNames();
 let fixedWinner = loadFixedWinner();
-let pendingConsumeFixedWinner = false;
-let ranking = loadRanking();
+let rankingStore = loadRankingStore();
 
 // Compute a fixed board width using the longest name to avoid layout shifts
 let maxLen = computeMaxLen();
@@ -38,9 +48,167 @@ const cancelWinnerBtn = document.getElementById("cancelWinnerBtn");
 const clearWinnerBtn = document.getElementById("clearWinnerBtn");
 const winnerStatus = document.getElementById("winnerStatus");
 const loginBtn = document.getElementById("loginBtn");
+const settingsBtn = document.getElementById("settingsBtn");
+const settingsDialog = document.getElementById("settingsDialog");
+const classListEl = document.getElementById("classList");
+const classDetailEl = document.getElementById("classDetail");
+const classSelector = document.getElementById("classSelector");
+const classNameInput = document.getElementById("classNameInput");
+const studentListTextarea = document.getElementById("studentListTextarea");
+const addClassBtn = document.getElementById("addClassBtn");
+const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+const classUsageNotice = document.getElementById("classUsageNotice");
 
 let firebaseAuth = null;
 let firebaseGoogleProvider = null;
+let firebaseDb = null;
+let currentUserId = null;
+let userClasses = [];
+let classesLoading = false;
+let classesError = null;
+let classesFetchToken = 0;
+let selectedClassId = null;
+let editingClassId = null;
+let totalClassCount = null;
+let classCountFetchInFlight = false;
+
+function getSelectedClass() {
+  if (!selectedClassId) return null;
+  return userClasses.find((entry) => entry.id === selectedClassId) || null;
+}
+
+function getSelectedClassStudents() {
+  const cls = getSelectedClass();
+  if (!cls || !Array.isArray(cls.students)) return [];
+  return cls.students.slice();
+}
+
+function getActiveNamePool() {
+  const classStudents = getSelectedClassStudents();
+  const usingClass = !!selectedClassId;
+  const source = usingClass ? classStudents : names;
+  return source
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+}
+
+function getDisplayWidth() {
+  const active = getActiveNamePool();
+  const longestActive = active.length ? Math.max(...active.map((s) => s.length)) : 0;
+  return Math.max(5, maxLen, longestActive);
+}
+
+function reconcileFixedWinnerWithPool() {
+  if (!fixedWinner) {
+    updateWinnerStatus();
+    return;
+  }
+  const pool = getActiveNamePool();
+  const exists = pool.some((n) => n.toUpperCase() === fixedWinner.toUpperCase());
+  if (!exists) {
+    fixedWinner = null;
+    saveFixedWinner();
+  }
+  updateWinnerStatus();
+}
+
+function updateClassUsageNoticeDisplay() {
+  if (!classUsageNotice) return;
+  const hasGlobalCount = typeof totalClassCount === "number" && !Number.isNaN(totalClassCount);
+  const count = hasGlobalCount ? totalClassCount : userClasses.length;
+
+  if (hasGlobalCount && count > 0) {
+    classUsageNotice.textContent = `${count} classes already using MVP for enhance student engagement.`;
+  } else if (classCountFetchInFlight) {
+    classUsageNotice.textContent = "Checking how many classes are using MVP...";
+  } else {
+    classUsageNotice.textContent = "Be the first class to use MVP to make students exciting.";
+  }
+
+  classUsageNotice.hidden = false;
+}
+
+async function fetchGlobalClassCount() {
+  if (!firebaseDb || classCountFetchInFlight) return;
+  classCountFetchInFlight = true;
+  updateClassUsageNoticeDisplay();
+  try {
+    const user = firebaseAuth && firebaseAuth.currentUser;
+    if (!user) {
+      const doc = await firebaseDb.collection("stats").doc(GLOBAL_STATS_DOC_ID).get();
+      if (doc.exists) {
+        const data = doc.data() || {};
+        const count = data && typeof data.classCount === "number" ? data.classCount : null;
+        totalClassCount = typeof count === "number" && !Number.isNaN(count) ? count : null;
+      } else {
+        totalClassCount = null;
+      }
+    } else {
+      const snapshot = await firebaseDb.collectionGroup("classes").get();
+      totalClassCount = snapshot.size;
+      try {
+        await firebaseDb
+          .collection("stats")
+          .doc(GLOBAL_STATS_DOC_ID)
+          .set(
+            {
+              classCount: totalClassCount,
+              updatedAt: firebase.firestore && firebase.firestore.FieldValue && typeof firebase.firestore.FieldValue.serverTimestamp === "function"
+                ? firebase.firestore.FieldValue.serverTimestamp()
+                : Date.now(),
+            },
+            { merge: true }
+          );
+      } catch (writeErr) {
+        console.warn("Failed to persist global class count", writeErr);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load global class count", err);
+  } finally {
+    classCountFetchInFlight = false;
+    updateClassUsageNoticeDisplay();
+  }
+}
+
+async function adjustGlobalUsageCount(delta) {
+  if (!firebaseDb || typeof delta !== "number" || !Number.isFinite(delta) || delta === 0) return;
+  const statsRef = firebaseDb.collection("stats").doc(GLOBAL_STATS_DOC_ID);
+  const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
+  const timestamp = fieldValue && typeof fieldValue.serverTimestamp === "function"
+    ? fieldValue.serverTimestamp()
+    : Date.now();
+
+  try {
+    if (fieldValue && typeof fieldValue.increment === "function") {
+      await statsRef.set(
+        {
+          classCount: fieldValue.increment(delta),
+          updatedAt: timestamp,
+        },
+        { merge: true }
+      );
+      return;
+    }
+
+    await firebaseDb.runTransaction(async (tx) => {
+      const snapshot = await tx.get(statsRef);
+      const data = snapshot.exists ? snapshot.data() || {} : {};
+      const base = typeof data.classCount === "number" && !Number.isNaN(data.classCount) ? data.classCount : 0;
+      const next = Math.max(0, base + delta);
+      tx.set(
+        statsRef,
+        {
+          classCount: next,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    });
+  } catch (err) {
+    console.warn("Failed to adjust global usage count", err);
+  }
+}
 
 function hasValidFirebaseConfig(config) {
   if (!config || typeof config !== "object") return false;
@@ -54,6 +222,34 @@ function hasValidFirebaseConfig(config) {
   return true;
 }
 
+function ensureSettingsVisibility() {
+  if (!settingsBtn) return;
+  const signedIn = !!(firebaseAuth && firebaseAuth.currentUser);
+  if (!signedIn) {
+    settingsBtn.hidden = true;
+    settingsBtn.disabled = true;
+    settingsBtn.title = "Sign in to manage classes";
+    if (classSelector) {
+      classSelector.hidden = true;
+      classSelector.classList.add("is-empty");
+      classSelector.innerHTML = "";
+      classSelector.disabled = true;
+    }
+    totalClassCount = null;
+    updateClassUsageNoticeDisplay();
+    if (firebaseDb) {
+      fetchGlobalClassCount();
+    }
+    return;
+  }
+  settingsBtn.hidden = false;
+  const enabled = !!firebaseDb;
+  settingsBtn.disabled = !enabled;
+  settingsBtn.title = enabled ? "Open settings" : "Firestore unavailable";
+  updateClassSelector();
+  if (enabled) fetchGlobalClassCount();
+}
+
 function updateLoginButton() {
   if (!loginBtn) return;
   const user = firebaseAuth && firebaseAuth.currentUser;
@@ -62,9 +258,10 @@ function updateLoginButton() {
     loginBtn.textContent = display ? `Sign out (${display})` : "Sign out";
     loginBtn.title = display ? `Signed in as ${display}` : "Signed in";
   } else {
-    loginBtn.textContent = "Login";
-    loginBtn.title = "Login";
+    loginBtn.textContent = "Login with Google";
+    loginBtn.title = "Login with Google";
   }
+  ensureSettingsVisibility();
 }
 
 function showFirebaseUnavailableAlert() {
@@ -73,6 +270,438 @@ function showFirebaseUnavailableAlert() {
 
 function showFirebaseConfigAlert() {
   alert("Firebase is not configured yet. Update window.FIREBASE_CONFIG with your project credentials.");
+}
+
+function sanitizeStudentList(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    if (typeof item === "string") {
+      const trimmed = item.trim();
+      if (trimmed.length) out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+function parseStudentList(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function getClassesCollection(uid = currentUserId) {
+  if (!firebaseDb || !uid) return null;
+  return firebaseDb.collection("users").doc(uid).collection("classes");
+}
+
+function createSettingsMessage(text, type = "info") {
+  const p = document.createElement("p");
+  p.className = `settings-message${type === "error" ? " error" : ""}`;
+  p.textContent = text;
+  return p;
+}
+
+function renderClassList() {
+  if (!classListEl) return;
+  classListEl.innerHTML = "";
+
+  const showListMessage = (text, type) => {
+    classListEl.appendChild(createSettingsMessage(text, type));
+    renderClassDetail();
+    updateClassSelector();
+    renderWeeklyList();
+    updateStartEnabled();
+    reconcileFixedWinnerWithPool();
+  };
+
+  if (!currentUserId) {
+    selectedClassId = null;
+    showListMessage("Sign in to manage classes.");
+    return;
+  }
+
+  if (!firebaseDb) {
+    selectedClassId = null;
+    showListMessage("Firestore is unavailable. Check your Firebase configuration.");
+    return;
+  }
+
+  if (classesLoading) {
+    selectedClassId = null;
+    showListMessage("Loading classes...");
+    return;
+  }
+
+  if (classesError) {
+    selectedClassId = null;
+    showListMessage(classesError, "error");
+    return;
+  }
+
+  if (!userClasses.length) {
+    selectedClassId = null;
+    showListMessage("No classes yet. Add one below.");
+    return;
+  }
+
+  if (!selectedClassId || !userClasses.some((cls) => cls.id === selectedClassId)) {
+    selectedClassId = userClasses[0].id;
+  }
+
+  userClasses.forEach((cls) => {
+    const itemBtn = document.createElement("button");
+    itemBtn.type = "button";
+    itemBtn.className = "class-item";
+    const isSelected = cls.id === selectedClassId;
+    if (isSelected) {
+      itemBtn.classList.add("selected");
+      itemBtn.setAttribute("aria-current", "true");
+    }
+    itemBtn.setAttribute("role", "option");
+    itemBtn.setAttribute("aria-selected", isSelected ? "true" : "false");
+    itemBtn.setAttribute("aria-label", `${cls.name}, ${cls.students.length} student${cls.students.length === 1 ? "" : "s"}`);
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "class-item-name";
+    nameEl.textContent = cls.name;
+
+    const countEl = document.createElement("span");
+    countEl.className = "class-item-count";
+    countEl.textContent = `${cls.students.length} student${cls.students.length === 1 ? "" : "s"}`;
+
+    itemBtn.appendChild(nameEl);
+    itemBtn.appendChild(countEl);
+
+    itemBtn.addEventListener("click", () => {
+      if (selectedClassId !== cls.id) {
+        selectedClassId = cls.id;
+        renderClassList();
+      }
+    });
+
+    classListEl.appendChild(itemBtn);
+  });
+
+  renderClassDetail();
+  updateClassSelector();
+  updateStartEnabled();
+  renderWeeklyList();
+  reconcileFixedWinnerWithPool();
+}
+
+function renderClassDetail() {
+  if (!classDetailEl) return;
+  classDetailEl.innerHTML = "";
+
+  const showDetailMessage = (text, type = "info") => {
+    const p = document.createElement("p");
+    p.className = `class-detail-message${type === "error" ? " class-detail-error" : ""}`;
+    p.textContent = text;
+    classDetailEl.appendChild(p);
+  };
+
+  if (!currentUserId) {
+    showDetailMessage("Sign in to view students.");
+    return;
+  }
+
+  if (!firebaseDb) {
+    showDetailMessage("Firestore is unavailable. Check your Firebase configuration.");
+    return;
+  }
+
+  if (classesLoading) {
+    showDetailMessage("Loading students...");
+    return;
+  }
+
+  if (classesError) {
+    showDetailMessage(classesError, "error");
+    return;
+  }
+
+  if (!userClasses.length) {
+    showDetailMessage("Add a class to see its students here.");
+    return;
+  }
+
+  if (!selectedClassId) {
+    showDetailMessage("Select a class from the left.");
+    return;
+  }
+
+  const cls = userClasses.find((entry) => entry.id === selectedClassId);
+  if (!cls) {
+    showDetailMessage("Select a class from the left.");
+    return;
+  }
+
+  const title = document.createElement("h3");
+  title.textContent = cls.name;
+  classDetailEl.appendChild(title);
+
+  const meta = document.createElement("p");
+  meta.className = "class-detail-meta";
+  meta.textContent = `${cls.students.length} student${cls.students.length === 1 ? "" : "s"}`;
+  classDetailEl.appendChild(meta);
+
+  const list = document.createElement("ul");
+  list.className = "student-list";
+  cls.students.forEach((student) => {
+    const li = document.createElement("li");
+    li.textContent = student;
+    list.appendChild(li);
+  });
+  classDetailEl.appendChild(list);
+
+  const actions = document.createElement("div");
+  actions.className = "class-detail-actions";
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "btn btn-secondary btn-sm";
+  editBtn.textContent = editingClassId === cls.id ? "Close Edit" : "Edit Class";
+  editBtn.addEventListener("click", () => {
+    if (editingClassId === cls.id) {
+      editingClassId = null;
+      renderClassDetail();
+    } else {
+      editingClassId = cls.id;
+      renderClassDetail();
+    }
+  });
+  actions.appendChild(editBtn);
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "btn btn-secondary btn-sm";
+  deleteBtn.textContent = "Delete Class";
+  deleteBtn.addEventListener("click", () => {
+    void deleteClass(cls, deleteBtn);
+  });
+  actions.appendChild(deleteBtn);
+  classDetailEl.appendChild(actions);
+
+  if (editingClassId === cls.id) {
+    const editPanel = document.createElement("div");
+    editPanel.className = "class-edit-panel";
+
+    const editLabel = document.createElement("label");
+    editLabel.className = "settings-label";
+    editLabel.textContent = "Edit Students";
+    editLabel.setAttribute("for", "classEditTextarea");
+    editPanel.appendChild(editLabel);
+
+    const textarea = document.createElement("textarea");
+    textarea.id = "classEditTextarea";
+    textarea.className = "settings-textarea";
+    textarea.rows = 8;
+    textarea.value = cls.students.join("\n");
+    editPanel.appendChild(textarea);
+
+    const message = document.createElement("p");
+    message.className = "settings-message";
+    message.hidden = true;
+    editPanel.appendChild(message);
+
+    const editActions = document.createElement("div");
+    editActions.className = "dialog-actions class-edit-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "btn btn-secondary";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => {
+      editingClassId = null;
+      renderClassDetail();
+    });
+
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "btn";
+    saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", async () => {
+      const students = parseStudentList(textarea.value);
+      if (!students.length) {
+        message.textContent = "Enter at least one student.";
+        message.classList.add("error");
+        message.hidden = false;
+        return;
+      }
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      message.textContent = "Saving...";
+      message.classList.remove("error");
+      message.hidden = false;
+      try {
+        const col = getClassesCollection();
+        if (!col) throw new Error("Missing Firestore reference");
+        const docRef = col.doc(cls.id);
+        const payload = { students };
+        const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
+        if (fieldValue && typeof fieldValue.serverTimestamp === "function") {
+          payload.updatedAt = fieldValue.serverTimestamp();
+        } else {
+          payload.updatedAt = Date.now();
+        }
+        await docRef.update(payload);
+        const local = userClasses.find((entry) => entry.id === cls.id);
+        if (local) local.students = students;
+        editingClassId = null;
+        renderClassList();
+      } catch (err) {
+        console.error("Failed to update class", err);
+        message.textContent = "Failed to save changes. Check the console for details.";
+        message.classList.add("error");
+        message.hidden = false;
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+    });
+
+    editActions.appendChild(cancelBtn);
+    editActions.appendChild(saveBtn);
+    editPanel.appendChild(editActions);
+    classDetailEl.appendChild(editPanel);
+  }
+}
+
+function updateClassSelector() {
+  if (!classSelector) return;
+  if (!currentUserId || !firebaseDb || classesLoading) {
+    classSelector.hidden = true;
+    classSelector.classList.add("is-empty");
+    classSelector.disabled = true;
+    classSelector.innerHTML = "";
+    return;
+  }
+  if (classesError || !userClasses.length) {
+    classSelector.hidden = true;
+    classSelector.classList.add("is-empty");
+    classSelector.disabled = true;
+    classSelector.innerHTML = "";
+    return;
+  }
+  classSelector.innerHTML = "";
+  userClasses.forEach((cls) => {
+    const option = document.createElement("option");
+    option.value = cls.id;
+    option.textContent = cls.name;
+    if (cls.id === selectedClassId) option.selected = true;
+    classSelector.appendChild(option);
+  });
+  classSelector.hidden = false;
+  classSelector.classList.remove("is-empty");
+  classSelector.disabled = false;
+  updateStartEnabled();
+}
+
+async function deleteClass(cls, button) {
+  if (!firebaseDb || !currentUserId) {
+    alert("Firestore is unavailable. Cannot delete class.");
+    return;
+  }
+  const ok = confirm(`Delete class "${cls.name}"?`);
+  if (!ok) return;
+  const originalLabel = button ? button.textContent : null;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Deleting...";
+  }
+  try {
+    const col = getClassesCollection();
+    if (!col) throw new Error("Missing Firestore reference");
+    await col.doc(cls.id).delete();
+    userClasses = userClasses.filter((entry) => entry.id !== cls.id);
+    if (!userClasses.some((entry) => entry.id === selectedClassId)) {
+      selectedClassId = userClasses.length ? userClasses[0].id : null;
+    }
+    classesError = null;
+    const rankingKey = getRankingKeyForClass(cls.id);
+    if (rankingStore[rankingKey]) {
+      delete rankingStore[rankingKey];
+      saveRankingStore();
+    }
+    renderClassList();
+    fetchGlobalClassCount();
+    void adjustGlobalUsageCount(-1);
+  } catch (err) {
+    console.error("Failed to delete class", err);
+    alert("Failed to delete class. Check the console for details.");
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+}
+
+function openSettingsDialog() {
+  if (!settingsDialog) return;
+  if (currentUserId && firebaseDb && !classesLoading && (userClasses.length === 0 || classesError)) {
+    void fetchClassesForUser(currentUserId);
+  }
+  renderClassList();
+  if (typeof settingsDialog.showModal === "function") {
+    if (!settingsDialog.open) settingsDialog.showModal();
+  } else {
+    settingsDialog.setAttribute("open", "");
+  }
+}
+
+function closeSettingsDialog() {
+  if (!settingsDialog) return;
+  if (typeof settingsDialog.close === "function") {
+    settingsDialog.close();
+  } else {
+    settingsDialog.removeAttribute("open");
+  }
+}
+
+async function fetchClassesForUser(uid) {
+  if (!uid || !firebaseDb) {
+    userClasses = [];
+    classesError = firebaseDb ? null : "Firestore unavailable. Configure Firebase Firestore.";
+    classesLoading = false;
+    selectedClassId = null;
+    renderClassList();
+    updateClassSelector();
+    return;
+  }
+  const token = ++classesFetchToken;
+  classesLoading = true;
+  classesError = null;
+  renderClassList();
+  try {
+    const col = getClassesCollection(uid);
+    if (!col) throw new Error("Missing Firestore collection reference");
+    const snapshot = await col.get();
+    if (token !== classesFetchToken || uid !== currentUserId) return;
+    const items = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      const name = typeof data.name === "string" ? data.name.trim() : "";
+      const students = sanitizeStudentList(data.students);
+      if (!name || !students.length) return;
+      items.push({ id: doc.id, name, students });
+    });
+    items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    userClasses = items;
+    if (!userClasses.some((entry) => entry.id === selectedClassId)) {
+      selectedClassId = userClasses.length ? userClasses[0].id : null;
+    }
+    classesLoading = false;
+    renderClassList();
+    updateClassSelector();
+  } catch (err) {
+    if (token !== classesFetchToken || uid !== currentUserId) return;
+    console.error("Failed to load classes", err);
+    userClasses = [];
+    classesError = "Failed to load classes. Try again later.";
+    classesLoading = false;
+    selectedClassId = null;
+    renderClassList();
+    updateClassSelector();
+  }
 }
 
 function handleLoginClick() {
@@ -86,6 +715,7 @@ function handleLoginClick() {
       console.error("Firebase sign-out failed", err);
       alert("Sign-out failed. Check the console for details.");
     });
+    closeSettingsDialog();
     return;
   }
   firebaseAuth
@@ -104,11 +734,13 @@ function initFirebaseAuth() {
   if (typeof firebase === "undefined" || !firebase || typeof firebase.auth !== "function") {
     loginBtn.addEventListener("click", showFirebaseUnavailableAlert);
     loginBtn.title = "Firebase scripts missing";
+    ensureSettingsVisibility();
     return;
   }
   if (!hasValidFirebaseConfig(config)) {
     loginBtn.addEventListener("click", showFirebaseConfigAlert);
     loginBtn.title = "Configure Firebase to enable login";
+    ensureSettingsVisibility();
     return;
   }
   try {
@@ -117,8 +749,40 @@ function initFirebaseAuth() {
     }
     firebaseAuth = firebase.auth();
     firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
-    firebaseAuth.onAuthStateChanged(() => {
+    if (typeof firebase.firestore === "function") {
+      try {
+        firebaseDb = firebase.firestore();
+      } catch (err) {
+        console.error("Failed to initialize Firestore", err);
+        firebaseDb = null;
+      }
+    } else {
+      firebaseDb = null;
+    }
+    ensureSettingsVisibility();
+    firebaseAuth.onAuthStateChanged((user) => {
+      currentUserId = user && user.uid ? user.uid : null;
+      if (!currentUserId) {
+        classesFetchToken += 1;
+        userClasses = [];
+        classesError = null;
+        classesLoading = false;
+        selectedClassId = null;
+        closeSettingsDialog();
+        updateLoginButton();
+        renderClassList();
+        updateClassSelector();
+        if (classNameInput) classNameInput.value = "";
+        if (studentListTextarea) studentListTextarea.value = "";
+        return;
+      }
       updateLoginButton();
+      if (classNameInput) classNameInput.value = "";
+      if (studentListTextarea) studentListTextarea.value = "";
+      void fetchClassesForUser(currentUserId);
+    });
+    firebaseAuth.onIdTokenChanged(() => {
+      ensureSettingsVisibility();
     });
     loginBtn.addEventListener("click", handleLoginClick);
     updateLoginButton();
@@ -170,41 +834,71 @@ function saveFixedWinner() {
   } catch {}
 }
 
-function loadRanking() {
+function normalizeRankingArray(value) {
+  const out = [];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string") {
+        out.push({ name: item, ts: Date.now() });
+      } else if (item && typeof item.name === "string") {
+        out.push({ name: item.name, ts: typeof item.ts === "number" ? item.ts : Date.now() });
+      }
+    }
+  }
+  return out;
+}
+
+function loadRankingStore() {
   try {
     const raw = localStorage.getItem(RANKING_KEY);
     if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) {
-        let migrated = false;
-        const out = [];
-        for (const item of arr) {
-          if (typeof item === "string") {
-            migrated = true;
-            out.push({ name: item, ts: Date.now() });
-          } else if (item && typeof item.name === "string") {
-            out.push({ name: item.name, ts: typeof item.ts === "number" ? item.ts : Date.now() });
-          }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const map = { default: normalizeRankingArray(parsed) };
+        localStorage.setItem(RANKING_KEY, JSON.stringify(map));
+        return map;
+      }
+      if (parsed && typeof parsed === "object") {
+        const out = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          out[key] = normalizeRankingArray(value);
         }
-        if (migrated) {
-          localStorage.setItem(RANKING_KEY, JSON.stringify(out));
-        }
+        if (!out.default) out.default = [];
+        localStorage.setItem(RANKING_KEY, JSON.stringify(out));
         return out;
       }
     }
   } catch {}
-  return [];
+  return { default: [] };
 }
 
-function saveRanking() {
+function saveRankingStore() {
   try {
-    localStorage.setItem(RANKING_KEY, JSON.stringify(ranking));
+    localStorage.setItem(RANKING_KEY, JSON.stringify(rankingStore));
   } catch {}
 }
 
+function getRankingKeyForClass(classId) {
+  return classId ? `class:${classId}` : "default";
+}
+
+function getActiveRankingKey() {
+  return getRankingKeyForClass(selectedClassId);
+}
+
+function getRankingEntriesForKey(key) {
+  if (!rankingStore[key]) rankingStore[key] = [];
+  return rankingStore[key];
+}
+
+function getActiveRankingEntries() {
+  return getRankingEntriesForKey(getActiveRankingKey());
+}
+
 function addRankingEntry(name) {
-  ranking.push({ name, ts: Date.now() });
-  saveRanking();
+  const list = getActiveRankingEntries();
+  list.push({ name, ts: Date.now() });
+  saveRankingStore();
   renderWeeklyList();
 }
 
@@ -337,53 +1031,58 @@ function randChar() {
 }
 
 function padToMax(s) {
-  // Center the string within maxLen using spaces
-  const totalPad = Math.max(0, maxLen - s.length);
+  // Center the string within the current display width using spaces
+  const width = getDisplayWidth();
+  const totalPad = Math.max(0, width - s.length);
   const left = Math.floor(totalPad / 2);
   const right = totalPad - left;
   return " ".repeat(left) + s + " ".repeat(right);
-}
-
-function randomRow(len = maxLen) {
-  let out = "";
-  for (let i = 0; i < len; i++) out += randChar();
-  return out;
 }
 
 let isBusy = false;
 
 function startShuffleAndPick({ shuffleMs = 5000 } = {}) {
   if (isBusy) return;
+  const pool = getActiveNamePool();
+  if (!pool.length) {
+    board.textContent = padToMax("NO NAMES");
+    updateStartEnabled();
+    return;
+  }
+
   isBusy = true;
   startBtn.disabled = true;
   ensureAudio();
   startShuffleSoundEffect();
 
-  // Initial board content fixed width
-  board.textContent = randomRow();
+  // Initial board content using one of the names in the pool
+  board.textContent = padToMax(pool[(Math.random() * pool.length) | 0].toUpperCase());
 
-  // Rapid shuffle loop
-  const tickMs = 30;
+  // Rapid shuffle loop cycling through names
+  const tickMs = 75;
   const interval = setInterval(() => {
-    board.textContent = randomRow();
+    const next = pool[(Math.random() * pool.length) | 0] || "";
+    board.textContent = padToMax(next.toUpperCase());
   }, tickMs);
 
   setTimeout(() => {
     clearInterval(interval);
     stopShuffleSoundEffect();
-    if (!names.length) {
+    if (!pool.length) {
       board.textContent = padToMax("NO NAMES");
       isBusy = false;
-      startBtn.disabled = false;
+      updateStartEnabled();
       return;
     }
     let winner;
-    pendingConsumeFixedWinner = false;
-    if (fixedWinner && names.some((n) => n.toUpperCase() === fixedWinner.toUpperCase())) {
-      winner = fixedWinner;
-      pendingConsumeFixedWinner = true;
-    } else {
-      winner = names[(Math.random() * names.length) | 0];
+    if (fixedWinner) {
+      const match = pool.find((n) => n.toUpperCase() === fixedWinner.toUpperCase());
+      if (match) {
+        winner = match;
+      }
+    }
+    if (!winner) {
+      winner = pool[(Math.random() * pool.length) | 0];
     }
     revealWinner(winner);
   }, shuffleMs);
@@ -392,14 +1091,15 @@ function startShuffleAndPick({ shuffleMs = 5000 } = {}) {
 function revealWinner(name) {
   const target = padToMax(name.toUpperCase());
   // Start from whatever is on screen now, or spaces
-  let current = (board.textContent || "").padEnd(maxLen, " ").slice(0, maxLen).split("");
+  const width = getDisplayWidth();
+  let current = (board.textContent || "").padEnd(width, " ").slice(0, width).split("");
 
   // For each position, flip a few random chars before locking the final char
   const flipsPerChar = 7;
   const stepDelay = 18; // ms between flips within a slot
   const cascadeDelay = 55; // ms between starting each slot
 
-  for (let i = 0; i < maxLen; i++) {
+  for (let i = 0; i < width; i++) {
     const finalChar = target[i];
     const startAt = i * cascadeDelay;
 
@@ -415,18 +1115,13 @@ function revealWinner(name) {
       current[i] = finalChar;
       board.textContent = current.join("");
       // When last char set, play sound and re-enable
-      if (i === maxLen - 1) {
+      if (i === width - 1) {
         playCongrats();
         // Record winner and update/download ranking CSV
         addRankingEntry(name);
-        if (pendingConsumeFixedWinner) {
-          fixedWinner = null;
-          saveFixedWinner();
-          updateWinnerStatus();
-        }
         setTimeout(() => {
           isBusy = false;
-          startBtn.disabled = false;
+          updateStartEnabled();
         }, 50);
       }
     }, startAt + flipsPerChar * stepDelay + 12);
@@ -440,12 +1135,12 @@ startBtn.addEventListener("click", () => {
 
 // Ensure stable width right away
 function updateStartEnabled() {
-  startBtn.disabled = isBusy || names.length === 0;
+  startBtn.disabled = isBusy || getActiveNamePool().length === 0;
 }
 
 function openNamesDialog() {
   // Pre-fill with current names
-  namesTextarea.value = names.join("\n");
+  namesTextarea.value = getActiveNamePool().join("\n");
   if (typeof namesDialog.showModal === "function") {
     namesDialog.showModal();
   } else {
@@ -491,10 +1186,12 @@ function applyNames(newNames) {
     fixedWinner = null;
     saveFixedWinner();
   }
-  updateWinnerStatus();
+  reconcileFixedWinnerWithPool();
 }
 
-setNamesBtn.addEventListener("click", openNamesDialog);
+if (setNamesBtn) {
+  setNamesBtn.addEventListener("click", openNamesDialog);
+}
 cancelNamesBtn.addEventListener("click", closeNamesDialog);
 saveNamesBtn.addEventListener("click", () => {
   const parsed = parseNames(namesTextarea.value);
@@ -509,13 +1206,18 @@ saveNamesBtn.addEventListener("click", () => {
 function openWinnerDialog() {
   // Render grid of name buttons
   winnerGrid.innerHTML = "";
-  if (!names.length) {
+  const classStudents = getSelectedClassStudents();
+  const sourceList = classStudents.length ? classStudents : names;
+
+  if (!sourceList.length) {
     const p = document.createElement("p");
-    p.textContent = "No names available. Please set names first.";
+    p.textContent = classStudents.length
+      ? "This class has no students yet."
+      : "No names available. Please set names first.";
     p.style.color = "var(--subtle)";
     winnerGrid.appendChild(p);
   } else {
-    names.forEach((name) => {
+    sourceList.forEach((name) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "name-btn";
@@ -577,7 +1279,103 @@ board.textContent = padToMax("READY");
 updateStartEnabled();
 updateWinnerStatus();
 renderWeeklyList();
+renderClassList();
+updateClassUsageNoticeDisplay();
 initFirebaseAuth();
+
+if (settingsBtn) {
+  settingsBtn.addEventListener("click", () => {
+    if (!firebaseAuth || !firebaseAuth.currentUser) {
+      alert("Please sign in to access settings.");
+      return;
+    }
+    if (!firebaseDb) {
+      alert("Firestore is unavailable. Check your Firebase configuration.");
+      return;
+    }
+    openSettingsDialog();
+  });
+}
+
+if (closeSettingsBtn) {
+  closeSettingsBtn.addEventListener("click", () => {
+    closeSettingsDialog();
+  });
+}
+
+if (classSelector) {
+  classSelector.addEventListener("change", () => {
+    const nextId = classSelector.value;
+    if (nextId && userClasses.some((cls) => cls.id === nextId)) {
+      if (selectedClassId !== nextId) {
+        selectedClassId = nextId;
+        renderClassList();
+      }
+    } else if (!nextId) {
+      selectedClassId = null;
+      renderClassList();
+    }
+  });
+}
+
+if (addClassBtn) {
+  addClassBtn.addEventListener("click", async () => {
+    if (!currentUserId) {
+      alert("Sign in to add a class.");
+      return;
+    }
+    if (!firebaseDb) {
+      alert("Firestore is unavailable. Check your Firebase configuration.");
+      return;
+    }
+    const name = classNameInput ? classNameInput.value.trim() : "";
+    const students = studentListTextarea ? parseStudentList(studentListTextarea.value) : [];
+    if (!name) {
+      alert("Enter a course name.");
+      return;
+    }
+    if (!students.length) {
+      alert("Enter at least one student name.");
+      return;
+    }
+    const existing = userClasses.some((cls) => cls.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      const overwrite = confirm("A class with this name already exists. Add another entry anyway?");
+      if (!overwrite) return;
+    }
+    const originalLabel = addClassBtn.textContent;
+    addClassBtn.disabled = true;
+    addClassBtn.textContent = "Saving...";
+    try {
+      const col = getClassesCollection();
+      if (!col) throw new Error("Missing Firestore reference");
+      const docRef = col.doc();
+      const payload = { name, students };
+      const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
+      if (fieldValue && typeof fieldValue.serverTimestamp === "function") {
+        payload.createdAt = fieldValue.serverTimestamp();
+      } else {
+        payload.createdAt = Date.now();
+      }
+      await docRef.set(payload);
+      userClasses.push({ id: docRef.id, name, students });
+      userClasses.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      classesError = null;
+      selectedClassId = docRef.id;
+      renderClassList();
+      fetchGlobalClassCount();
+      void adjustGlobalUsageCount(1);
+      if (classNameInput) classNameInput.value = "";
+      if (studentListTextarea) studentListTextarea.value = "";
+    } catch (err) {
+      console.error("Failed to add class", err);
+      alert("Failed to add class. Check the console for details.");
+    } finally {
+      addClassBtn.disabled = false;
+      addClassBtn.textContent = originalLabel;
+    }
+  });
+}
 
 // Weekly winners rendering as two-column table (Week | Name)
 function getISOWeekInfo(ts) {
@@ -591,28 +1389,9 @@ function getISOWeekInfo(ts) {
   return { year, week, label: `W${week}` };
 }
 
-function buildWeekSequence() {
-  // Determine sequential week numbers (W1, W2, ...) based on first occurrence of each ISO week
-  const sorted = ranking
-    .filter((e) => e && typeof e.name === "string" && typeof e.ts === "number")
-    .slice()
-    .sort((a, b) => a.ts - b.ts);
-  const weekSeq = new Map(); // key -> seq
-  let seq = 0;
-  for (const e of sorted) {
-    const { year, week } = getISOWeekInfo(e.ts);
-    const key = `${year}-W${week}`;
-    if (!weekSeq.has(key)) {
-      seq += 1;
-      weekSeq.set(key, seq);
-    }
-  }
-  return weekSeq;
-}
-
-function getAllRowsWithWeekLabels() {
+function getAllRowsWithWeekLabels(entries) {
   // Sequential label per run: W1, W2, ... regardless of calendar week
-  return ranking
+  return entries
     .filter((e) => e && typeof e.name === "string" && typeof e.ts === "number")
     .slice()
     .sort((a, b) => a.ts - b.ts)
@@ -622,7 +1401,8 @@ function getAllRowsWithWeekLabels() {
 function renderWeeklyList() {
   const listEl = document.getElementById("weeklyList");
   if (!listEl) return;
-  const rows = getAllRowsWithWeekLabels();
+  const entries = getActiveRankingEntries();
+  const rows = getAllRowsWithWeekLabels(entries);
   listEl.innerHTML = "";
   if (!rows.length) return;
   rows.forEach((r, idx) => {
@@ -653,20 +1433,21 @@ if (weeklyListEl) {
     if (!item || !weeklyListEl.contains(item)) return;
     const ts = Number(item.dataset.ts || "");
     if (!Number.isFinite(ts)) return;
-    const idx = ranking.findIndex((entry) => entry && typeof entry.ts === "number" && entry.ts === ts);
+    const list = getActiveRankingEntries();
+    const idx = list.findIndex((entry) => entry && typeof entry.ts === "number" && entry.ts === ts);
     if (idx === -1) return;
-    const entry = ranking[idx];
+    const entry = list[idx];
     const name = entry && typeof entry.name === "string" ? entry.name : "this winner";
     const ok = confirm(`Remove ${name} from the winners list?`);
     if (!ok) return;
-    ranking.splice(idx, 1);
-    saveRanking();
+    list.splice(idx, 1);
+    saveRankingStore();
     renderWeeklyList();
   });
 }
 
 function updateShuffleUI(val) {
-  shuffleValue.textContent = `${val}s`;
+  if (shuffleValue) shuffleValue.textContent = `${val}s`;
 }
 
 if (shuffleRange) {
@@ -680,13 +1461,24 @@ if (shuffleRange) {
 
 // Clear weekly table (clears all ranking history)
 const clearWeeklyBtn = document.getElementById("clearWeeklyBtn");
-if (clearWeeklyBtn) {
+const confirmResetPanel = document.getElementById("confirmResetPanel");
+const confirmResetBtn = document.getElementById("confirmResetBtn");
+const cancelResetBtn = document.getElementById("cancelResetBtn");
+
+if (clearWeeklyBtn && confirmResetPanel && confirmResetBtn && cancelResetBtn) {
   clearWeeklyBtn.addEventListener("click", () => {
-    const ok = confirm("Clear all saved winners from the weekly list? This cannot be undone.");
-    if (!ok) return;
-    // Reset winners only
-    ranking = [];
-    saveRanking();
+    confirmResetPanel.hidden = false;
+  });
+
+  cancelResetBtn.addEventListener("click", () => {
+    confirmResetPanel.hidden = true;
+  });
+
+  confirmResetBtn.addEventListener("click", () => {
+    const key = getActiveRankingKey();
+    rankingStore[key] = [];
+    saveRankingStore();
     renderWeeklyList();
+    confirmResetPanel.hidden = true;
   });
 }
