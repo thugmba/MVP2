@@ -84,92 +84,40 @@
         flex-direction: column;
         gap: 1rem;
       }
-
-      .feedback-form {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-
-      .feedback-row {
-        display: flex;
-        flex-direction: column;
-        gap: 0.4rem;
-      }
-
-      .feedback-label {
-        font-weight: 600;
-        letter-spacing: 0.03em;
-      }
-
-      .feedback-input,
-      .feedback-textarea {
-        width: 100%;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        background: rgba(13, 20, 27, 0.85);
-        color: var(--text);
-        padding: 0.65rem 0.8rem;
-        font-size: 1rem;
-      }
-
-      .feedback-textarea {
-        min-height: 140px;
-        resize: vertical;
-      }
-
-      .feedback-actions {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: flex-end;
-      }
-
-      .feedback-status {
-        margin: 0;
-        min-height: 1.4rem;
-        font-size: 0.95rem;
-        letter-spacing: 0.02em;
-      }
-
-      .feedback-status.success { color: #9be7c4; }
-      .feedback-status.error { color: #ff9a9a; }
-
-      .feedback-row-hidden {
-        display: none;
-      }
     </style>
   </head>
   <body class="help-page">
     <main class="help-container" aria-labelledby="helpTitle">
       <header>
         <h1 id="helpTitle" class="help-title">MVP Classroom Guide</h1>
-        <p class="help-subtitle">Everything you need to pick todays Most Valuable Player.</p>
+        <p class="help-subtitle">Everything you need to pick today’s Most Valuable Player.</p>
       </header>
 
       <section class="help-section" aria-labelledby="step1">
         <h2 id="step1">1. Sign in &amp; Add classes</h2>
         <ul class="help-list">
-          <li>Select <strong>Sign in with Google</strong></li>
-          <li>Open <strong>Settings</strong> to add your classes and student lists.</li>
+          <li>Select <strong>Sign in with Google</strong>.</li>
+          <li>Open <strong>Settings</strong> to add classes and student lists.</li>
           <li>Switch between classes using the dropdown in the top bar.</li>
         </ul>
       </section>
 
       <section class="help-section" aria-labelledby="step2">
-        <h2 id="step2">2. Pick Today's MVP</h2>
+        <h2 id="step2">2. Pick Today’s MVP</h2>
         <ul class="help-list">
-          <li>Click <strong>Trophy</strong> icon to choose an MVP. You can use smartphone for this.</li>
-          <li>Click <strong>Start</strong> to run the shuffle and display today's MVP.</li>
-          <li>The winner is logged automatically in the Weekly Winners timeline.</li>
+          <li>Click the <strong>Trophy</strong> icon to preset a winner. When presenting on a big screen, use your phone to avoid showing the selection to students. 
+            On Main page, press 'q' to show a QR code that lets you access MVP from your phone</li>
+          <li>Press <strong>Start</strong> to shuffle names and reveal the MVP.</li>
+          <li>MVPs are tracked automatically in the Weekly Winners timeline.</li>
         </ul>
       </section>
 
       <section class="help-section" aria-labelledby="step3">
         <h2 id="step3">3. Manage Weekly Winners</h2>
         <ul class="help-list">
-          <li>Use the timeline on the right to review previous MVPs.</li>
-          <li>Select a winner entry to remove it if needed.</li>
-          <li>Reset the entire week with the <strong>Reset Weekly Winners</strong> button. This is for resetting the list at the end of each semester.</li>
+          <li>Review past MVPs using the timeline on the right.</li>
+          <li>Select an entry to remove it if needed.</li>
+          <li>Reset the list at the end of each semester with <strong>Reset Weekly Winners</strong>.</li>
         </ul>
       </section>
 
@@ -177,135 +125,18 @@
         <h2 id="step4">Need more help?</h2>
         <ul class="help-list">
           <li>Reach out to the Innovation Analytics Laboratory at Tunghai University for support.</li>
-          <li>Use the Google sign-in email to contact the project maintainer.</li>
         </ul>
       </section>
 
       <section class="help-section feedback-section" aria-labelledby="feedbackTitle">
         <h2 id="feedbackTitle">Send Us Feedback</h2>
-        <p class="help-subtitle">Have an improvement idea or spotted a bug? Send it our way.</p>
-        <form id="feedbackForm" class="feedback-form" novalidate>
-          <div class="feedback-row feedback-row-hidden">
-            <label class="feedback-label" for="feedbackEmail">Contact email</label>
-            <input id="feedbackEmail" class="feedback-input" type="email" placeholder="you@example.com" />
-          </div>
-          <div class="feedback-row">
-            <label class="feedback-label" for="feedbackMessage">Message*</label>
-            <textarea id="feedbackMessage" class="feedback-textarea" rows="5" placeholder="Tell us what would make MVP better" required></textarea>
-          </div>
-          <p id="feedbackStatus" class="feedback-status" role="status" aria-live="polite"></p>
-          <div class="feedback-actions">
-            <button type="submit" class="btn">Send Feedback</button>
-            <button type="button" id="feedbackResetBtn" class="btn btn-secondary">Clear</button>
-          </div>
-        </form>
+        <p class="help-subtitle">Have an improvement idea or spotted a bug? We’d love to hear from you.</p>
+        <a href="https://forms.office.com/r/iJ3NGeWNQw" target="_blank" rel="noopener">Open Feedback Form</a>
       </section>
 
       <div class="help-actions">
         <a class="btn btn-secondary" href="index.html">Back to MVP App</a>
       </div>
     </main>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script>
-      window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
-        apiKey: "AIzaSyD225v6FB15Syii_UGlulV-ttbQT1A7zF8",
-        authDomain: "thumvp-3238b.firebaseapp.com",
-        projectId: "thumvp-3238b",
-        storageBucket: "thumvp-3238b.firebasestorage.app",
-        messagingSenderId: "330875315451",
-        appId: "1:330875315451:web:31de5dea1594bbb9047c5e",
-        measurementId: "G-YNW7FKETH3"
-      };
-    </script>
-    <script>
-      (function () {
-        const form = document.getElementById("feedbackForm");
-        const nameInput = null;
-        const messageInput = document.getElementById("feedbackMessage");
-        const statusEl = document.getElementById("feedbackStatus");
-        const resetBtn = document.getElementById("feedbackResetBtn");
-
-        let firebaseDb = null;
-        let firebaseAuthInstance = null;
-        let currentUser = null;
-
-        function initFirebase() {
-          if (typeof firebase === "undefined" || !window.FIREBASE_CONFIG) {
-            setStatus("Feedback service is unavailable right now.", true);
-            return;
-          }
-          try {
-            if (!firebase.apps || !firebase.apps.length) {
-              firebase.initializeApp(window.FIREBASE_CONFIG);
-            }
-            firebaseAuthInstance = firebase.auth();
-            firebaseDb = firebase.firestore();
-            firebaseAuthInstance.onAuthStateChanged((user) => {
-              currentUser = user;
-            });
-          } catch (err) {
-            console.error("Failed to initialise Firebase on help page", err);
-            setStatus("Feedback service failed to initialise.", true);
-          }
-        }
-
-        function setStatus(message, isError = false) {
-          statusEl.textContent = message;
-          statusEl.classList.toggle("error", isError);
-          statusEl.classList.toggle("success", !isError && message);
-        }
-
-        function clearForm() {
-          form.reset();
-          setStatus("");
-        }
-
-        async function submitFeedback(event) {
-          event.preventDefault();
-          if (!firebaseDb) {
-            setStatus("Feedback service is offline. Please try again later.", true);
-            return;
-          }
-
-          const message = messageInput.value.trim();
-          if (!message) {
-            setStatus("Please enter a feedback message before sending.", true);
-            messageInput.focus();
-            return;
-          }
-
-          const payload = {
-            message,
-            name: currentUser ? currentUser.displayName || null : null,
-            contactEmail: currentUser ? currentUser.email : null,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            submittedBy: currentUser && currentUser.uid ? currentUser.uid : null,
-            userAgent: navigator.userAgent,
-            page: "help",
-          };
-
-          try {
-            setStatus("Sending feedback...");
-            await firebaseDb.collection("feedback").add(payload);
-            setStatus("Thanks! Your feedback has been sent.");
-            form.reset();
-          } catch (err) {
-            console.error("Failed to submit feedback", err);
-            setStatus("Failed to send feedback. Please try again later.", true);
-          }
-        }
-
-        if (form) {
-          form.addEventListener("submit", submitFeedback);
-        }
-        if (resetBtn) {
-          resetBtn.addEventListener("click", clearForm);
-        }
-
-        initFirebase();
-      })();
-    </script>
   </body>
 </html>
