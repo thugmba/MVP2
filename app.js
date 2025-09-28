@@ -74,6 +74,34 @@ let totalClassCount = null;
 let classCountFetchInFlight = false;
 let previousFocus = null;
 let qrOverlayVisible = false;
+let classWinnerUnsubscribe = null;
+let globalStatsUnsubscribe = null;
+const latestClassUsageMetrics = {
+  percentage: null,
+  mvpCount: null,
+  studentCount: null,
+  classCount: null,
+};
+
+function getLatestGlobalStats() {
+  if (typeof window === "undefined") return {};
+  return window.__latestGlobalStats || {};
+}
+
+function setLatestGlobalStats(partial) {
+  if (typeof window === "undefined") return;
+  const currentStats = window.__latestGlobalStats || {};
+  const nextStats = { ...currentStats };
+  if (partial && typeof partial === "object") {
+    for (const [key, value] of Object.entries(partial)) {
+      if (value !== undefined && value !== null) {
+        nextStats[key] = value;
+      }
+    }
+  }
+  window.__latestGlobalStats = nextStats;
+  updateClassUsageNoticeDisplay();
+}
 
 function getSelectedClass() {
   if (!selectedClassId) return null;
@@ -81,9 +109,9 @@ function getSelectedClass() {
 }
 
 function getSelectedClassStudents() {
-  const cls = getSelectedClass();
-  if (!cls || !Array.isArray(cls.students)) return [];
-  return cls.students.slice();
+  const classEntry = getSelectedClass();
+  if (!classEntry || !Array.isArray(classEntry.students)) return [];
+  return classEntry.students.slice();
 }
 
 function getActiveNamePool() {
@@ -183,16 +211,51 @@ function updateClassUsageNoticeDisplay() {
   if (!classUsageNotice) return;
   const hasGlobalCount = typeof totalClassCount === "number" && !Number.isNaN(totalClassCount);
   const count = hasGlobalCount ? totalClassCount : userClasses.length;
+  const statsDoc = getLatestGlobalStats();
+  const totalStudents = typeof statsDoc.studentCount === "number" ? statsDoc.studentCount : null;
+  const totalMvps = typeof statsDoc.mvpCount === "number" ? statsDoc.mvpCount : null;
+  const classCountFromStats = typeof statsDoc.classCount === "number" ? statsDoc.classCount : null;
+  const classCount = hasGlobalCount ? totalClassCount : (classCountFromStats !== null ? classCountFromStats : count);
 
-  if (hasGlobalCount && count > 0) {
-    classUsageNotice.textContent = `${count} classes already using MVP for enhance student engagement.`;
+  const canShowAggregate = classCount !== null && classCount > 0 && totalStudents !== null && totalStudents > 0 && totalMvps !== null;
+  const previousMetrics = { ...latestClassUsageMetrics };
+
+  if (canShowAggregate) {
+    const percentage = Math.min(100, Math.max(0, (totalMvps / totalStudents) * 100));
+    latestClassUsageMetrics.percentage = percentage.toFixed(1);
+    latestClassUsageMetrics.mvpCount = totalMvps;
+    latestClassUsageMetrics.studentCount = totalStudents;
+    latestClassUsageMetrics.classCount = classCount;
+    classUsageNotice.innerHTML = `<span class="class-usage-number" data-highlight="percentage">${latestClassUsageMetrics.percentage}%</span> of students (<span class="class-usage-number" data-highlight="mvpCount">${latestClassUsageMetrics.mvpCount}</span> out of <span class="class-usage-number" data-highlight="studentCount">${latestClassUsageMetrics.studentCount}</span>) across <span class="class-usage-number" data-highlight="classCount">${latestClassUsageMetrics.classCount}</span> classes achieved MVP status.`;
   } else if (classCountFetchInFlight) {
     classUsageNotice.textContent = "Checking how many classes are using MVP...";
+    latestClassUsageMetrics.percentage = null;
+    latestClassUsageMetrics.mvpCount = null;
+    latestClassUsageMetrics.studentCount = null;
+    latestClassUsageMetrics.classCount = null;
   } else {
     classUsageNotice.textContent = "Be the first class to use MVP to make students exciting.";
+    latestClassUsageMetrics.percentage = null;
+    latestClassUsageMetrics.mvpCount = null;
+    latestClassUsageMetrics.studentCount = null;
+    latestClassUsageMetrics.classCount = null;
   }
 
   classUsageNotice.hidden = false;
+
+  const highlightDurationMs = 500;
+  if (canShowAggregate) {
+    classUsageNotice.querySelectorAll(".class-usage-number").forEach((element) => {
+      const key = element.getAttribute("data-highlight");
+      if (!key) return;
+      const previousValue = previousMetrics[key];
+      const currentValue = latestClassUsageMetrics[key];
+      if (previousValue === null || previousValue === undefined || String(previousValue) !== String(currentValue)) {
+        element.classList.add("highlight");
+        setTimeout(() => element.classList.remove("highlight"), highlightDurationMs);
+      }
+    });
+  }
 }
 
 async function fetchGlobalClassCount() {
@@ -207,8 +270,14 @@ async function fetchGlobalClassCount() {
         const data = doc.data() || {};
         const count = data && typeof data.classCount === "number" ? data.classCount : null;
         totalClassCount = typeof count === "number" && !Number.isNaN(count) ? count : null;
+        setLatestGlobalStats({
+          classCount: typeof count === "number" ? count : undefined,
+          studentCount: typeof data.studentCount === "number" ? data.studentCount : undefined,
+          mvpCount: typeof data.mvpCount === "number" ? data.mvpCount : undefined,
+        });
       } else {
         totalClassCount = null;
+        setLatestGlobalStats({ classCount: undefined });
       }
     } else {
       const snapshot = await firebaseDb.collectionGroup("classes").get();
@@ -229,6 +298,7 @@ async function fetchGlobalClassCount() {
       } catch (writeErr) {
         console.warn("Failed to persist global class count", writeErr);
       }
+      setLatestGlobalStats({ classCount: totalClassCount });
     }
   } catch (err) {
     console.error("Failed to load global class count", err);
@@ -245,6 +315,7 @@ async function adjustGlobalUsageCount(delta) {
   const timestamp = fieldValue && typeof fieldValue.serverTimestamp === "function"
     ? fieldValue.serverTimestamp()
     : Date.now();
+  let updatedClassCount = null;
 
   try {
     if (fieldValue && typeof fieldValue.increment === "function") {
@@ -255,6 +326,9 @@ async function adjustGlobalUsageCount(delta) {
         },
         { merge: true }
       );
+      const currentStats = getLatestGlobalStats();
+      const base = typeof currentStats.classCount === "number" ? currentStats.classCount : 0;
+      updatedClassCount = Math.max(0, base + delta);
       return;
     }
 
@@ -271,9 +345,42 @@ async function adjustGlobalUsageCount(delta) {
         },
         { merge: true }
       );
+      updatedClassCount = next;
     });
   } catch (err) {
     console.warn("Failed to adjust global usage count", err);
+    return;
+  }
+
+  if (updatedClassCount !== null) {
+    setLatestGlobalStats({ classCount: updatedClassCount });
+  }
+}
+
+async function updateGlobalStudentTotals() {
+  if (!firebaseDb || !currentUserId) return;
+  const classesCollection = getClassesCollection();
+  if (!classesCollection) return;
+  try {
+    const snapshot = await classesCollection.get();
+    let totalStudents = 0;
+    snapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      const students = Array.isArray(data.students) ? data.students : [];
+      totalStudents += students.length;
+    });
+    await firebaseDb
+      .collection("stats")
+      .doc(GLOBAL_STATS_DOC_ID)
+      .set(
+        {
+          studentCount: totalStudents,
+        },
+        { merge: true }
+      );
+    setLatestGlobalStats({ studentCount: totalStudents });
+  } catch (err) {
+    console.error("Failed to update global student count", err);
   }
 }
 
@@ -380,6 +487,7 @@ function renderClassList() {
     updateClassSelector();
     syncActiveWinnerFromSelection({ persist: false });
     renderWeeklyList();
+    unsubscribeClassWinner();
   };
 
   if (!currentUserId) {
@@ -412,37 +520,37 @@ function renderClassList() {
     return;
   }
 
-  if (!selectedClassId || !userClasses.some((cls) => cls.id === selectedClassId)) {
+  if (!selectedClassId || !userClasses.some((classEntry) => classEntry.id === selectedClassId)) {
     selectedClassId = userClasses[0].id;
   }
 
-  userClasses.forEach((cls) => {
+  userClasses.forEach((classEntry) => {
     const itemBtn = document.createElement("button");
     itemBtn.type = "button";
     itemBtn.className = "class-item";
-    const isSelected = cls.id === selectedClassId;
+    const isSelected = classEntry.id === selectedClassId;
     if (isSelected) {
       itemBtn.classList.add("selected");
       itemBtn.setAttribute("aria-current", "true");
     }
     itemBtn.setAttribute("role", "option");
     itemBtn.setAttribute("aria-selected", isSelected ? "true" : "false");
-    itemBtn.setAttribute("aria-label", `${cls.name}, ${cls.students.length} student${cls.students.length === 1 ? "" : "s"}`);
+    itemBtn.setAttribute("aria-label", `${classEntry.name}, ${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`);
 
     const nameEl = document.createElement("span");
     nameEl.className = "class-item-name";
-    nameEl.textContent = cls.name;
+    nameEl.textContent = classEntry.name;
 
     const countEl = document.createElement("span");
     countEl.className = "class-item-count";
-    countEl.textContent = `${cls.students.length} student${cls.students.length === 1 ? "" : "s"}`;
+    countEl.textContent = `${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`;
 
     itemBtn.appendChild(nameEl);
     itemBtn.appendChild(countEl);
 
     itemBtn.addEventListener("click", () => {
-      if (selectedClassId !== cls.id) {
-        selectedClassId = cls.id;
+      if (selectedClassId !== classEntry.id) {
+        selectedClassId = classEntry.id;
         renderClassList();
       }
     });
@@ -454,6 +562,7 @@ function renderClassList() {
   updateClassSelector();
   syncActiveWinnerFromSelection({ persist: false });
   renderWeeklyList();
+  refreshClassWinnerSubscription();
 }
 
 function renderClassDetail() {
@@ -497,24 +606,24 @@ function renderClassDetail() {
     return;
   }
 
-  const cls = userClasses.find((entry) => entry.id === selectedClassId);
-  if (!cls) {
+  const classEntry = userClasses.find((entry) => entry.id === selectedClassId);
+  if (!classEntry) {
     showDetailMessage("Select a class from the left.");
     return;
   }
 
   const title = document.createElement("h3");
-  title.textContent = cls.name;
+  title.textContent = classEntry.name;
   classDetailEl.appendChild(title);
 
   const meta = document.createElement("p");
   meta.className = "class-detail-meta";
-  meta.textContent = `${cls.students.length} student${cls.students.length === 1 ? "" : "s"}`;
+  meta.textContent = `${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`;
   classDetailEl.appendChild(meta);
 
   const list = document.createElement("ul");
   list.className = "student-list";
-  cls.students.forEach((student) => {
+  classEntry.students.forEach((student) => {
     const li = document.createElement("li");
     li.textContent = student;
     list.appendChild(li);
@@ -526,13 +635,13 @@ function renderClassDetail() {
   const editBtn = document.createElement("button");
   editBtn.type = "button";
   editBtn.className = "btn btn-secondary btn-sm";
-  editBtn.textContent = editingClassId === cls.id ? "Close Edit" : "Edit Class";
+  editBtn.textContent = editingClassId === classEntry.id ? "Close Edit" : "Edit Class";
   editBtn.addEventListener("click", () => {
-    if (editingClassId === cls.id) {
+    if (editingClassId === classEntry.id) {
       editingClassId = null;
       renderClassDetail();
     } else {
-      editingClassId = cls.id;
+      editingClassId = classEntry.id;
       renderClassDetail();
     }
   });
@@ -542,12 +651,12 @@ function renderClassDetail() {
   deleteBtn.className = "btn btn-secondary btn-sm";
   deleteBtn.textContent = "Delete Class";
   deleteBtn.addEventListener("click", () => {
-    void deleteClass(cls, deleteBtn);
+    void deleteClass(classEntry, deleteBtn);
   });
   actions.appendChild(deleteBtn);
   classDetailEl.appendChild(actions);
 
-  if (editingClassId === cls.id) {
+  if (editingClassId === classEntry.id) {
     const editPanel = document.createElement("div");
     editPanel.className = "class-edit-panel";
 
@@ -561,7 +670,7 @@ function renderClassDetail() {
     textarea.id = "classEditTextarea";
     textarea.className = "settings-textarea";
     textarea.rows = 8;
-    textarea.value = cls.students.join("\n");
+    textarea.value = classEntry.students.join("\n");
     editPanel.appendChild(textarea);
 
     const message = document.createElement("p");
@@ -599,9 +708,9 @@ function renderClassDetail() {
       message.classList.remove("error");
       message.hidden = false;
       try {
-        const col = getClassesCollection();
-        if (!col) throw new Error("Missing Firestore reference");
-        const docRef = col.doc(cls.id);
+        const classesCollection = getClassesCollection();
+        if (!classesCollection) throw new Error("Missing Firestore reference");
+        const docRef = classesCollection.doc(classEntry.id);
         const payload = { students };
         const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
         if (fieldValue && typeof fieldValue.serverTimestamp === "function") {
@@ -610,8 +719,8 @@ function renderClassDetail() {
           payload.updatedAt = Date.now();
         }
         await docRef.update(payload);
-        const local = userClasses.find((entry) => entry.id === cls.id);
-        if (local) local.students = students;
+        const localEntry = userClasses.find((entry) => entry.id === classEntry.id);
+        if (localEntry) localEntry.students = students;
         editingClassId = null;
         renderClassList();
       } catch (err) {
@@ -648,11 +757,11 @@ function updateClassSelector() {
     return;
   }
   classSelector.innerHTML = "";
-  userClasses.forEach((cls) => {
+  userClasses.forEach((classEntry) => {
     const option = document.createElement("option");
-    option.value = cls.id;
-    option.textContent = cls.name;
-    if (cls.id === selectedClassId) option.selected = true;
+    option.value = classEntry.id;
+    option.textContent = classEntry.name;
+    if (classEntry.id === selectedClassId) option.selected = true;
     classSelector.appendChild(option);
   });
   classSelector.hidden = false;
@@ -661,12 +770,12 @@ function updateClassSelector() {
   updateStartEnabled();
 }
 
-async function deleteClass(cls, button) {
+async function deleteClass(classEntry, button) {
   if (!firebaseDb || !currentUserId) {
     alert("Firestore is unavailable. Cannot delete class.");
     return;
   }
-  const ok = confirm(`Delete class "${cls.name}"?`);
+  const ok = confirm(`Delete class "${classEntry.name}"?`);
   if (!ok) return;
   const originalLabel = button ? button.textContent : null;
   if (button) {
@@ -674,21 +783,23 @@ async function deleteClass(cls, button) {
     button.textContent = "Deleting...";
   }
   try {
-    const col = getClassesCollection();
-    if (!col) throw new Error("Missing Firestore reference");
-    await col.doc(cls.id).delete();
-    userClasses = userClasses.filter((entry) => entry.id !== cls.id);
+    const classesCollection = getClassesCollection();
+    if (!classesCollection) throw new Error("Missing Firestore reference");
+    await classesCollection.doc(classEntry.id).delete();
+    userClasses = userClasses.filter((entry) => entry.id !== classEntry.id);
     if (!userClasses.some((entry) => entry.id === selectedClassId)) {
       selectedClassId = userClasses.length ? userClasses[0].id : null;
     }
     classesError = null;
-    const rankingKey = getRankingKeyForClass(cls.id);
+    const rankingKey = getRankingKeyForClass(classEntry.id);
     if (rankingStore[rankingKey]) {
       delete rankingStore[rankingKey];
     }
     renderClassList();
     fetchGlobalClassCount();
     void adjustGlobalUsageCount(-1);
+    void refreshGlobalStudentCount();
+    void updateGlobalMvpTotals();
   } catch (err) {
     console.error("Failed to delete class", err);
     alert("Failed to delete class. Check the console for details.");
@@ -736,9 +847,9 @@ async function fetchClassesForUser(uid) {
   classesError = null;
   renderClassList();
   try {
-    const col = getClassesCollection(uid);
-    if (!col) throw new Error("Missing Firestore collection reference");
-    const snapshot = await col.get();
+    const classesCollection = getClassesCollection(uid);
+    if (!classesCollection) throw new Error("Missing Firestore collection reference");
+    const snapshot = await classesCollection.get();
     if (token !== classesFetchToken || uid !== currentUserId) return;
     const items = [];
     const seenRankingKeys = new Set();
@@ -767,6 +878,7 @@ async function fetchClassesForUser(uid) {
     classesLoading = false;
     renderClassList();
     updateClassSelector();
+    void updateGlobalMvpTotals();
   } catch (err) {
     if (token !== classesFetchToken || uid !== currentUserId) return;
     console.error("Failed to load classes", err);
@@ -776,6 +888,7 @@ async function fetchClassesForUser(uid) {
     selectedClassId = null;
     renderClassList();
     updateClassSelector();
+    void updateGlobalMvpTotals();
   }
 }
 
@@ -810,6 +923,7 @@ function initFirebaseAuth() {
     loginBtn.addEventListener("click", showFirebaseUnavailableAlert);
     loginBtn.title = "Firebase scripts missing";
     ensureSettingsVisibility();
+    unsubscribeGlobalStats();
     return;
   }
   if (!hasValidFirebaseConfig(config)) {
@@ -830,10 +944,13 @@ function initFirebaseAuth() {
       } catch (err) {
         console.error("Failed to initialize Firestore", err);
         firebaseDb = null;
+        unsubscribeGlobalStats();
       }
     } else {
       firebaseDb = null;
+      unsubscribeGlobalStats();
     }
+    refreshGlobalStatsSubscription();
     ensureSettingsVisibility();
     firebaseAuth.onAuthStateChanged((user) => {
       currentUserId = user && user.uid ? user.uid : null;
@@ -843,6 +960,7 @@ function initFirebaseAuth() {
         classesError = null;
         classesLoading = false;
         selectedClassId = null;
+        unsubscribeClassWinner();
         resetUserStateToDefaults();
         closeSettingsDialog();
         updateLoginButton();
@@ -943,9 +1061,9 @@ function getRankingEntriesForStorage(list) {
 
 function getCurrentWinnerForStart() {
   if (selectedClassId) {
-    const cls = getSelectedClass();
-    if (cls && typeof cls.currentWinner === "string") {
-      const trimmed = cls.currentWinner.trim();
+    const selectedClassEntry = getSelectedClass();
+    if (selectedClassEntry && typeof selectedClassEntry.currentWinner === "string") {
+      const trimmed = selectedClassEntry.currentWinner.trim();
       if (trimmed.length) return trimmed;
     }
     return null;
@@ -1031,9 +1149,9 @@ function persistRankingStore(classId = selectedClassId) {
   if (!classId) {
     return persistUserState({ rankingStore: { default: sanitized } });
   }
-  const col = getClassesCollection();
-  if (!col) return Promise.resolve();
-  return col
+  const classesCollection = getClassesCollection();
+  if (!classesCollection) return Promise.resolve();
+  return classesCollection
     .doc(classId)
     .set({ weeklyWinners: sanitized }, { merge: true })
     .catch((err) => {
@@ -1043,11 +1161,11 @@ function persistRankingStore(classId = selectedClassId) {
 
 function persistClassCurrentWinner(classId, winner) {
   if (!firebaseDb || !currentUserId || !classId) return Promise.resolve();
-  const col = getClassesCollection();
-  if (!col) return Promise.resolve();
+  const classesCollection = getClassesCollection();
+  if (!classesCollection) return Promise.resolve();
   const value = typeof winner === "string" ? winner.trim() : "";
   const payload = { currentWinner: value.length ? value : null };
-  return col
+  return classesCollection
     .doc(classId)
     .set(payload, { merge: true })
     .catch((err) => {
@@ -1056,12 +1174,12 @@ function persistClassCurrentWinner(classId, winner) {
 }
 
 function updateActiveWinner(nextWinner, { persist = true, skipReconcile = false } = {}) {
-  const cls = getSelectedClass();
+  const selectedClassEntry = getSelectedClass();
   const trimmed = typeof nextWinner === "string" ? nextWinner.trim() : "";
   fixedWinner = trimmed.length ? trimmed : null;
-  if (cls) {
-    cls.currentWinner = fixedWinner;
-    if (persist) void persistClassCurrentWinner(cls.id, fixedWinner);
+  if (selectedClassEntry) {
+    selectedClassEntry.currentWinner = fixedWinner;
+    if (persist) void persistClassCurrentWinner(selectedClassEntry.id, fixedWinner);
   } else if (persist) {
     persistFixedWinner();
   } else {
@@ -1074,13 +1192,116 @@ function updateActiveWinner(nextWinner, { persist = true, skipReconcile = false 
 
 function syncActiveWinnerFromSelection({ persist = false } = {}) {
   if (selectedClassId) {
-    const cls = getSelectedClass();
-    const winner = cls && typeof cls.currentWinner === "string" ? cls.currentWinner : null;
+    const selectedClassEntry = getSelectedClass();
+    const winner = selectedClassEntry && typeof selectedClassEntry.currentWinner === "string" ? selectedClassEntry.currentWinner : null;
     updateActiveWinner(winner, { persist, skipReconcile: true });
   } else {
     updateActiveWinner(defaultFixedWinner, { persist: false, skipReconcile: true });
   }
   reconcileFixedWinnerWithPool();
+}
+
+async function refreshGlobalStudentCount() {
+  try {
+    await updateGlobalStudentTotals();
+  } catch (err) {
+    console.error("Failed to refresh global student count", err);
+  }
+}
+
+async function updateGlobalMvpTotals() {
+  if (!firebaseDb) return;
+  try {
+    const totalMvps = Object.values(rankingStore || {}).reduce((sum, entries) => {
+      if (Array.isArray(entries)) {
+        return sum + entries.length;
+      }
+      return sum;
+    }, 0);
+
+    await firebaseDb
+      .collection("stats")
+      .doc(GLOBAL_STATS_DOC_ID)
+      .set(
+        {
+          mvpCount: totalMvps,
+        },
+        { merge: true }
+      );
+    setLatestGlobalStats({ mvpCount: totalMvps });
+  } catch (err) {
+    console.error("Failed to update global MVP count", err);
+  }
+}
+
+function unsubscribeClassWinner() {
+  if (classWinnerUnsubscribe) {
+    classWinnerUnsubscribe();
+    classWinnerUnsubscribe = null;
+  }
+}
+
+function refreshClassWinnerSubscription() {
+  unsubscribeClassWinner();
+  if (!firebaseDb || !currentUserId || !selectedClassId) return;
+  const classesCollection = getClassesCollection();
+  if (!classesCollection) return;
+  try {
+    classWinnerUnsubscribe = classesCollection.doc(selectedClassId).onSnapshot(
+      (snapshot) => {
+        const data = snapshot && snapshot.exists ? snapshot.data() || {} : {};
+        const winner = typeof data.currentWinner === "string" ? data.currentWinner.trim() : null;
+        const selectedClassEntry = userClasses.find((entry) => entry.id === selectedClassId);
+        if (selectedClassEntry) selectedClassEntry.currentWinner = winner || null;
+        if (Array.isArray(data.weeklyWinners)) {
+          applyRemoteWeeklyWinners(selectedClassId, data.weeklyWinners, { render: true });
+        }
+        updateActiveWinner(winner, { persist: false, skipReconcile: true });
+        reconcileFixedWinnerWithPool();
+      },
+      (err) => {
+        console.error("Winner listener error", err);
+      }
+    );
+  } catch (err) {
+    console.error("Failed to subscribe to class winner", err);
+  }
+}
+
+function unsubscribeGlobalStats() {
+  if (globalStatsUnsubscribe) {
+    globalStatsUnsubscribe();
+    globalStatsUnsubscribe = null;
+  }
+}
+
+function refreshGlobalStatsSubscription() {
+  unsubscribeGlobalStats();
+  if (!firebaseDb) return;
+  try {
+    globalStatsUnsubscribe = firebaseDb
+      .collection("stats")
+      .doc(GLOBAL_STATS_DOC_ID)
+      .onSnapshot(
+        (snapshot) => {
+        const data = snapshot && snapshot.exists ? snapshot.data() || {} : {};
+        if (typeof data.classCount === "number" && !Number.isNaN(data.classCount)) {
+          totalClassCount = data.classCount;
+        }
+        setLatestGlobalStats({
+          classCount: typeof data.classCount === "number" ? data.classCount : undefined,
+          studentCount: typeof data.studentCount === "number" ? data.studentCount : undefined,
+          mvpCount: typeof data.mvpCount === "number" ? data.mvpCount : undefined,
+        });
+        renderWeeklyList();
+      },
+        (err) => {
+          console.error("Global stats listener error", err);
+        }
+      );
+  } catch (err) {
+    console.error("Failed to subscribe to global stats", err);
+  }
 }
 
 async function loadUserState(uid) {
@@ -1107,6 +1328,7 @@ async function loadUserState(uid) {
     updateStartEnabled();
     updateWinnerStatus();
     renderWeeklyList();
+    void updateGlobalMvpTotals();
     if (!snapshot || !snapshot.exists) {
       await persistUserState({ names, fixedWinner, rankingStore });
     }
@@ -1133,10 +1355,33 @@ function getActiveRankingEntries() {
   return getRankingEntriesForKey(getActiveRankingKey());
 }
 
+function areRankingListsEqual(listA, listB) {
+  if (!Array.isArray(listA) || !Array.isArray(listB)) return false;
+  if (listA.length !== listB.length) return false;
+  for (let i = 0; i < listA.length; i++) {
+    const a = listA[i];
+    const b = listB[i];
+    if (!a || !b) return false;
+    if (a.name !== b.name || a.ts !== b.ts) return false;
+  }
+  return true;
+}
+
+function applyRemoteWeeklyWinners(classId, entries, { render = true } = {}) {
+  const key = getRankingKeyForClass(classId);
+  const normalized = normalizeRankingArray(entries);
+  const current = rankingStore[key] || [];
+  if (!areRankingListsEqual(current, normalized)) {
+    rankingStore[key] = normalized;
+    if (render) renderWeeklyList();
+  }
+}
+
 function addRankingEntry(name) {
   const list = getActiveRankingEntries();
   list.push({ name, ts: Date.now() });
   void persistRankingStore();
+  void updateGlobalMvpTotals();
   renderWeeklyList();
 }
 
@@ -1373,23 +1618,23 @@ async function handleStartButtonClick() {
   let winner = getCurrentWinnerForStart();
 
   if (selectedClassId) {
-    const col = getClassesCollection();
-    if (!col) {
+    const classesCollection = getClassesCollection();
+    if (!classesCollection) {
       alert("Firestore is unavailable. Cannot load the current winner.");
       updateStartEnabled();
       return;
     }
     try {
-      const snapshot = await col.doc(selectedClassId).get();
+      const snapshot = await classesCollection.doc(selectedClassId).get();
       const data = snapshot && snapshot.exists ? snapshot.data() || {} : {};
       const storedWinner = typeof data.currentWinner === "string" ? data.currentWinner.trim() : "";
-      const cls = getSelectedClass();
+      const selectedClassEntry = getSelectedClass();
       if (storedWinner.length) {
         winner = storedWinner;
-        if (cls) cls.currentWinner = storedWinner;
+        if (selectedClassEntry) selectedClassEntry.currentWinner = storedWinner;
       } else {
-        winner = cls && typeof cls.currentWinner === "string" && cls.currentWinner.trim().length
-          ? cls.currentWinner.trim()
+        winner = selectedClassEntry && typeof selectedClassEntry.currentWinner === "string" && selectedClassEntry.currentWinner.trim().length
+          ? selectedClassEntry.currentWinner.trim()
           : null;
       }
     } catch (err) {
@@ -1600,7 +1845,7 @@ if (closeSettingsBtn) {
 if (classSelector) {
   classSelector.addEventListener("change", () => {
     const nextId = classSelector.value;
-    if (nextId && userClasses.some((cls) => cls.id === nextId)) {
+    if (nextId && userClasses.some((classEntry) => classEntry.id === nextId)) {
       if (selectedClassId !== nextId) {
         selectedClassId = nextId;
         renderClassList();
@@ -1632,8 +1877,8 @@ if (addClassBtn) {
       alert("Enter at least one student name.");
       return;
     }
-    const existing = userClasses.some((cls) => cls.name.toLowerCase() === name.toLowerCase());
-    if (existing) {
+    const nameAlreadyExists = userClasses.some((classEntry) => classEntry.name.toLowerCase() === name.toLowerCase());
+    if (nameAlreadyExists) {
       const overwrite = confirm("A class with this name already exists. Add another entry anyway?");
       if (!overwrite) return;
     }
@@ -1641,9 +1886,9 @@ if (addClassBtn) {
     addClassBtn.disabled = true;
     addClassBtn.textContent = "Saving...";
     try {
-      const col = getClassesCollection();
-      if (!col) throw new Error("Missing Firestore reference");
-      const docRef = col.doc();
+      const classesCollection = getClassesCollection();
+      if (!classesCollection) throw new Error("Missing Firestore reference");
+      const docRef = classesCollection.doc();
       const payload = { name, students };
       const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
       if (fieldValue && typeof fieldValue.serverTimestamp === "function") {
@@ -1663,6 +1908,7 @@ if (addClassBtn) {
       renderWeeklyList();
       fetchGlobalClassCount();
       void adjustGlobalUsageCount(1);
+      void refreshGlobalStudentCount();
       if (classNameInput) classNameInput.value = "";
       if (studentListTextarea) studentListTextarea.value = "";
     } catch (err) {
@@ -1740,6 +1986,7 @@ if (weeklyListEl) {
     if (!ok) return;
     list.splice(idx, 1);
     void persistRankingStore();
+    void updateGlobalMvpTotals();
     renderWeeklyList();
   });
 }
@@ -1776,6 +2023,7 @@ if (clearWeeklyBtn && confirmResetPanel && confirmResetBtn && cancelResetBtn) {
     const key = getActiveRankingKey();
     rankingStore[key] = [];
     void persistRankingStore();
+    void updateGlobalMvpTotals();
     renderWeeklyList();
     confirmResetPanel.hidden = true;
   });

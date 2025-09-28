@@ -25,12 +25,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 1rem 2rem 0.75rem;
   gap: 1.25rem;
-  position: sticky;
-  top: 0;
   z-index: 1500;
   background: radial-gradient(1200px 800px at 50% -10%, #2a0c0c 0%, var(--bg) 60%);
+  border-radius: 16px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+  flex-wrap: wrap;
+  align-content: flex-start;
 }
 
 .auth-panel {
@@ -53,7 +54,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-left: -6px;
+  margin-left: 0;
 }
 
 .class-picker {
@@ -77,22 +78,13 @@ body {
 
 .app {
   min-height: 100vh;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  padding: 2rem;
-}
-
-.app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  padding: 2rem;
+  gap: 1.6rem;
+  padding: 2.25rem 2rem 2.5rem;
 }
 
 .main-row {
@@ -218,6 +210,19 @@ body {
   letter-spacing: 0.03em;
   color: rgba(255, 255, 255, 0.72);
   text-align: center;
+}
+
+.class-usage-number {
+  display: inline-block;
+}
+
+.class-usage-number.highlight {
+  background: linear-gradient(180deg, rgba(220,0,0,0.85), rgba(150,0,0,0.85));
+  color: #ffffff;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  box-shadow: 0 8px 16px rgba(220, 0, 0, 0.35), 0 1px 0 rgba(255,255,255,0.25) inset;
+  transition: all 0.2s ease;
 }
 
 
