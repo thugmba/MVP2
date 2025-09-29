@@ -1640,43 +1640,12 @@ function startShuffleAndPick({ shuffleMs = 5000 } = {}) {
 
 function revealWinner(name) {
   const target = padToMax(name.toUpperCase());
-  // Start from whatever is on screen now, or spaces
-  const width = getDisplayWidth();
-  let current = (board.textContent || "").padEnd(width, " ").slice(0, width).split("");
-
-  // For each position, flip a few random chars before locking the final char
-  const flipsPerChar = 7;
-  const stepDelay = 18; // ms between flips within a slot
-  const cascadeDelay = 55; // ms between starting each slot
-
-  for (let i = 0; i < width; i++) {
-    const finalChar = target[i];
-    const startAt = i * cascadeDelay;
-
-    for (let f = 0; f < flipsPerChar; f++) {
-      setTimeout(() => {
-        current[i] = randChar();
-        board.textContent = current.join("");
-      }, startAt + f * stepDelay);
-    }
-
-    // Lock final character
-    setTimeout(() => {
-      current[i] = finalChar;
-      board.textContent = current.join("");
-      // When last char set, play sound and re-enable
-      if (i === width - 1) {
-        playCongrats();
-        // Record winner and update/download ranking CSV
-        addRankingEntry(name);
-        updateActiveWinner(null);
-        setTimeout(() => {
-          isBusy = false;
-          updateStartEnabled();
-        }, 50);
-      }
-    }, startAt + flipsPerChar * stepDelay + 12);
-  }
+  board.textContent = target;
+  playCongrats();
+  addRankingEntry(name);
+  updateActiveWinner(null);
+  isBusy = false;
+  updateStartEnabled();
 }
 
 async function handleStartButtonClick() {
