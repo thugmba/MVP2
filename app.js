@@ -572,7 +572,7 @@ function animateReadyMessage() {
     const span = document.createElement("span");
     span.className = "board-letter";
     span.textContent = message[i];
-    const delay = (total - 1 - i) * delayStep;
+    const delay = i * delayStep;
     span.style.setProperty("--fly-delay", `${delay}s`);
     board.appendChild(span);
   }
