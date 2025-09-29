@@ -44,19 +44,28 @@ const setWinnerBtn = document.getElementById("setWinnerBtn");
 const winnerDialog = document.getElementById("winnerDialog");
 const winnerGrid = document.getElementById("winnerGrid");
 const cancelWinnerBtn = document.getElementById("cancelWinnerBtn");
-const clearWinnerBtn = document.getElementById("clearWinnerBtn");
 const winnerStatus = document.getElementById("winnerStatus");
 const loginBtn = document.getElementById("loginBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsDialog = document.getElementById("settingsDialog");
 const helpBtn = document.getElementById("helpBtn");
 const classListEl = document.getElementById("classList");
-const classDetailEl = document.getElementById("classDetail");
+const settingsAddFieldset = document.getElementById("settingsAddFieldset");
 const classSelector = document.getElementById("classSelector");
 const classNameInput = document.getElementById("classNameInput");
 const studentListTextarea = document.getElementById("studentListTextarea");
 const addClassBtn = document.getElementById("addClassBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+const classEditDialog = document.getElementById("classEditDialog");
+const classEditTitle = document.getElementById("classEditTitle");
+const classEditTextarea = document.getElementById("classEditTextarea");
+const classEditMessage = document.getElementById("classEditMessage");
+const classEditCancelBtn = document.getElementById("classEditCancelBtn");
+const classEditSaveBtn = document.getElementById("classEditSaveBtn");
+const classDeleteDialog = document.getElementById("classDeleteDialog");
+const classDeleteMessage = document.getElementById("classDeleteMessage");
+const classDeleteCancelBtn = document.getElementById("classDeleteCancelBtn");
+const classDeleteConfirmBtn = document.getElementById("classDeleteConfirmBtn");
 const classUsageNotice = document.getElementById("classUsageNotice");
 const qrOverlay = document.getElementById("qrOverlay");
 const qrOverlayCard = qrOverlay ? qrOverlay.querySelector(".qr-overlay-card") : null;
@@ -74,7 +83,6 @@ let classesLoading = false;
 let classesError = null;
 let classesFetchToken = 0;
 let selectedClassId = null;
-let editingClassId = null;
 let totalClassCount = null;
 let classCountFetchInFlight = false;
 let previousFocus = null;
@@ -88,6 +96,11 @@ const latestClassUsageMetrics = {
   classCount: null,
 };
 let pendingWeeklyRemoval = null;
+let isAddingClass = false;
+let editingClassId = null;
+let pendingDeleteClass = null;
+let hasUserSelectedClass = false;
+let readyAnimationTimeout = null;
 
 function getLatestGlobalStats() {
   if (typeof window === "undefined") return {};
@@ -513,6 +526,154 @@ function createSettingsMessage(text, type = "info") {
   return p;
 }
 
+function openAddClassFormUI() {
+  isAddingClass = true;
+  if (settingsAddFieldset) settingsAddFieldset.hidden = false;
+  if (addClassBtn) addClassBtn.textContent = "Save Class";
+  if (classNameInput) {
+    classNameInput.focus();
+    classNameInput.select();
+  }
+}
+
+function resetAddClassFormUI({ clearFields = false } = {}) {
+  isAddingClass = false;
+  if (settingsAddFieldset) settingsAddFieldset.hidden = true;
+  if (addClassBtn) {
+    addClassBtn.textContent = "Add Class";
+    addClassBtn.disabled = false;
+  }
+  if (clearFields) {
+    if (classNameInput) classNameInput.value = "";
+    if (studentListTextarea) studentListTextarea.value = "";
+  }
+}
+
+function resetClassEditMessage() {
+  if (!classEditMessage) return;
+  classEditMessage.textContent = "";
+  classEditMessage.hidden = true;
+  classEditMessage.classList.remove("error");
+}
+
+function animateReadyMessage() {
+  if (!board) return;
+  if (readyAnimationTimeout !== null) {
+    clearTimeout(readyAnimationTimeout);
+    readyAnimationTimeout = null;
+  }
+  const message = "READY";
+  const padded = padToMax(message);
+  board.innerHTML = "";
+  const total = message.length;
+  const delayStep = 0.18;
+  const animationDuration = 0.975;
+  for (let i = 0; i < total; i++) {
+    const span = document.createElement("span");
+    span.className = "board-letter";
+    span.textContent = message[i];
+    const delay = (total - 1 - i) * delayStep;
+    span.style.setProperty("--fly-delay", `${delay}s`);
+    board.appendChild(span);
+  }
+  const totalDurationMs = Math.ceil(((total - 1) * delayStep + animationDuration) * 1000);
+  readyAnimationTimeout = window.setTimeout(() => {
+    if (board) board.textContent = padded;
+    readyAnimationTimeout = null;
+  }, totalDurationMs);
+}
+
+function applyReadyMessage({ animate = false } = {}) {
+  if (!board) return;
+  if (readyAnimationTimeout !== null) {
+    clearTimeout(readyAnimationTimeout);
+    readyAnimationTimeout = null;
+  }
+  if (animate) {
+    animateReadyMessage();
+  } else {
+    board.textContent = padToMax("READY");
+  }
+}
+
+function closeClassEditDialog({ resetTextarea = true } = {}) {
+  if (!classEditDialog) return;
+  editingClassId = null;
+  resetClassEditMessage();
+  if (resetTextarea && classEditTextarea) classEditTextarea.value = "";
+  if (typeof classEditDialog.close === "function") {
+    classEditDialog.close();
+  } else {
+    classEditDialog.removeAttribute("open");
+  }
+  if (classEditSaveBtn) {
+    classEditSaveBtn.disabled = false;
+    classEditSaveBtn.textContent = "Save";
+  }
+  if (classEditCancelBtn) classEditCancelBtn.disabled = false;
+}
+
+function openClassEditDialog(classEntry) {
+  if (!classEditDialog || !classEntry) return;
+  editingClassId = classEntry.id;
+  resetClassEditMessage();
+  if (classEditTitle) classEditTitle.textContent = `Edit ${classEntry.name}`;
+  if (classEditTextarea) classEditTextarea.value = Array.isArray(classEntry.students) ? classEntry.students.join("\n") : "";
+  if (typeof classEditDialog.showModal === "function") {
+    if (!classEditDialog.open) classEditDialog.showModal();
+  } else {
+    classEditDialog.setAttribute("open", "");
+  }
+  if (classEditTextarea) {
+    setTimeout(() => {
+      classEditTextarea.focus();
+      classEditTextarea.select();
+    }, 0);
+  }
+}
+
+function resetClassDeleteDialogUI() {
+  if (classDeleteMessage) classDeleteMessage.textContent = "";
+  if (classDeleteConfirmBtn) {
+    classDeleteConfirmBtn.disabled = false;
+    classDeleteConfirmBtn.textContent = "Delete";
+  }
+  if (classDeleteCancelBtn) classDeleteCancelBtn.disabled = false;
+}
+
+function closeClassDeleteDialog({ resetButtons = true } = {}) {
+  if (resetButtons) resetClassDeleteDialogUI();
+  pendingDeleteClass = null;
+  if (!classDeleteDialog) return;
+  if (typeof classDeleteDialog.close === "function") {
+    if (classDeleteDialog.open) classDeleteDialog.close();
+  } else {
+    classDeleteDialog.removeAttribute("open");
+  }
+}
+
+function openClassDeleteDialog(classEntry, triggerButton) {
+  if (!classDeleteDialog || !classEntry) return;
+  resetClassDeleteDialogUI();
+  pendingDeleteClass = {
+    entry: classEntry,
+    triggerButton,
+  };
+  const count = Array.isArray(classEntry.students) ? classEntry.students.length : 0;
+  const studentText = count === 0 ? "no students" : count === 1 ? "1 student" : `${count} students`;
+  if (classDeleteMessage) {
+    classDeleteMessage.textContent = `Delete "${classEntry.name}" and remove ${studentText}? This cannot be undone.`;
+  }
+  if (typeof classDeleteDialog.showModal === "function") {
+    if (!classDeleteDialog.open) classDeleteDialog.showModal();
+  } else {
+    classDeleteDialog.setAttribute("open", "");
+  }
+  if (classDeleteConfirmBtn) {
+    setTimeout(() => classDeleteConfirmBtn.focus(), 0);
+  }
+}
+
 function renderClassList() {
   if (!classListEl) return;
   classListEl.innerHTML = "";
@@ -521,7 +682,7 @@ function renderClassList() {
   const showListMessage = (text, type) => {
     closeWeeklyRemovalDialog();
     classListEl.appendChild(createSettingsMessage(text, type));
-    renderClassDetail();
+    closeClassEditDialog();
     updateClassSelector();
     syncActiveWinnerFromSelection({ persist: false });
     renderWeeklyList();
@@ -554,7 +715,7 @@ function renderClassList() {
 
   if (!userClasses.length) {
     selectedClassId = null;
-    showListMessage("No classes yet. Add one below.");
+    showListMessage("No classes yet. Click Add Class to create one.");
     return;
   }
 
@@ -563,219 +724,85 @@ function renderClassList() {
   }
 
   userClasses.forEach((classEntry) => {
-    const itemBtn = document.createElement("button");
-    itemBtn.type = "button";
-    itemBtn.className = "class-item";
+    const row = document.createElement("div");
+    row.className = "class-item";
     const isSelected = classEntry.id === selectedClassId;
-    if (isSelected) {
-      itemBtn.classList.add("selected");
-      itemBtn.setAttribute("aria-current", "true");
-    }
-    itemBtn.setAttribute("role", "option");
-    itemBtn.setAttribute("aria-selected", isSelected ? "true" : "false");
-    itemBtn.setAttribute("aria-label", `${classEntry.name}, ${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`);
+    const shouldHighlight = hasUserSelectedClass && isSelected;
+    row.classList.toggle("selected", shouldHighlight);
 
-    const nameEl = document.createElement("span");
-    nameEl.className = "class-item-name";
-    nameEl.textContent = classEntry.name;
+    const main = document.createElement("div");
+    main.className = "class-item-main";
+    main.tabIndex = 0;
+    main.setAttribute("role", "option");
+    main.setAttribute("aria-selected", shouldHighlight ? "true" : "false");
+    main.setAttribute("aria-label", `${classEntry.name}, ${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`);
 
     const countEl = document.createElement("span");
     countEl.className = "class-item-count";
     countEl.textContent = `${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`;
 
-    itemBtn.appendChild(nameEl);
-    itemBtn.appendChild(countEl);
+    const nameText = document.createElement("span");
+    nameText.className = "class-item-name";
+    nameText.textContent = classEntry.name;
 
-    itemBtn.addEventListener("click", () => {
-      if (selectedClassId !== classEntry.id) {
-        selectedClassId = classEntry.id;
-        renderClassList();
+    main.appendChild(nameText);
+    main.appendChild(countEl);
+
+    const actions = document.createElement("div");
+    actions.className = "class-item-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn btn-secondary btn-sm";
+    editBtn.textContent = "Edit";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn btn-danger btn-sm";
+    deleteBtn.textContent = "Delete";
+
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+
+    const handleSelect = () => {
+      hasUserSelectedClass = true;
+      selectedClassId = classEntry.id;
+      renderClassList();
+    };
+
+    main.addEventListener("click", handleSelect);
+    main.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handleSelect();
       }
     });
 
-    classListEl.appendChild(itemBtn);
+    editBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+       hasUserSelectedClass = true;
+      selectedClassId = classEntry.id;
+      renderClassList();
+      const latestEntry = userClasses.find((entry) => entry.id === classEntry.id) || classEntry;
+      openClassEditDialog(latestEntry);
+    });
+
+    deleteBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      hasUserSelectedClass = true;
+      openClassDeleteDialog(classEntry, deleteBtn);
+    });
+
+    row.appendChild(main);
+    row.appendChild(actions);
+    classListEl.appendChild(row);
   });
 
-  renderClassDetail();
   updateClassSelector();
   syncActiveWinnerFromSelection({ persist: false });
   renderWeeklyList();
   refreshClassWinnerSubscription();
-}
-
-function renderClassDetail() {
-  if (!classDetailEl) return;
-  classDetailEl.innerHTML = "";
-
-  const showDetailMessage = (text, type = "info") => {
-    const p = document.createElement("p");
-    p.className = `class-detail-message${type === "error" ? " class-detail-error" : ""}`;
-    p.textContent = text;
-    classDetailEl.appendChild(p);
-  };
-
-  if (!currentUserId) {
-    showDetailMessage("Sign in to view students.");
-    return;
-  }
-
-  if (!firebaseDb) {
-    showDetailMessage("Firestore is unavailable. Check your Firebase configuration.");
-    return;
-  }
-
-  if (classesLoading) {
-    showDetailMessage("Loading students...");
-    return;
-  }
-
-  if (classesError) {
-    showDetailMessage(classesError, "error");
-    return;
-  }
-
-  if (!userClasses.length) {
-    showDetailMessage("Add a class to see its students here.");
-    return;
-  }
-
-  if (!selectedClassId) {
-    showDetailMessage("Select a class from the left.");
-    return;
-  }
-
-  const classEntry = userClasses.find((entry) => entry.id === selectedClassId);
-  if (!classEntry) {
-    showDetailMessage("Select a class from the left.");
-    return;
-  }
-
-  const title = document.createElement("h3");
-  title.textContent = classEntry.name;
-  classDetailEl.appendChild(title);
-
-  const meta = document.createElement("p");
-  meta.className = "class-detail-meta";
-  meta.textContent = `${classEntry.students.length} student${classEntry.students.length === 1 ? "" : "s"}`;
-  classDetailEl.appendChild(meta);
-
-  const list = document.createElement("ul");
-  list.className = "student-list";
-  classEntry.students.forEach((student) => {
-    const li = document.createElement("li");
-    li.textContent = student;
-    list.appendChild(li);
-  });
-  classDetailEl.appendChild(list);
-
-  const actions = document.createElement("div");
-  actions.className = "class-detail-actions";
-  const editBtn = document.createElement("button");
-  editBtn.type = "button";
-  editBtn.className = "btn btn-secondary btn-sm";
-  editBtn.textContent = editingClassId === classEntry.id ? "Close Edit" : "Edit Class";
-  editBtn.addEventListener("click", () => {
-    if (editingClassId === classEntry.id) {
-      editingClassId = null;
-      renderClassDetail();
-    } else {
-      editingClassId = classEntry.id;
-      renderClassDetail();
-    }
-  });
-  actions.appendChild(editBtn);
-  const deleteBtn = document.createElement("button");
-  deleteBtn.type = "button";
-  deleteBtn.className = "btn btn-secondary btn-sm";
-  deleteBtn.textContent = "Delete Class";
-  deleteBtn.addEventListener("click", () => {
-    void deleteClass(classEntry, deleteBtn);
-  });
-  actions.appendChild(deleteBtn);
-  classDetailEl.appendChild(actions);
-
-  if (editingClassId === classEntry.id) {
-    const editPanel = document.createElement("div");
-    editPanel.className = "class-edit-panel";
-
-    const editLabel = document.createElement("label");
-    editLabel.className = "settings-label";
-    editLabel.textContent = "Edit Students";
-    editLabel.setAttribute("for", "classEditTextarea");
-    editPanel.appendChild(editLabel);
-
-    const textarea = document.createElement("textarea");
-    textarea.id = "classEditTextarea";
-    textarea.className = "settings-textarea";
-    textarea.rows = 8;
-    textarea.value = classEntry.students.join("\n");
-    editPanel.appendChild(textarea);
-
-    const message = document.createElement("p");
-    message.className = "settings-message";
-    message.hidden = true;
-    editPanel.appendChild(message);
-
-    const editActions = document.createElement("div");
-    editActions.className = "dialog-actions class-edit-actions";
-
-    const cancelBtn = document.createElement("button");
-    cancelBtn.type = "button";
-    cancelBtn.className = "btn btn-secondary";
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", () => {
-      editingClassId = null;
-      renderClassDetail();
-    });
-
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.className = "btn";
-    saveBtn.textContent = "Save";
-    saveBtn.addEventListener("click", async () => {
-      const students = parseStudentList(textarea.value);
-      if (!students.length) {
-        message.textContent = "Enter at least one student.";
-        message.classList.add("error");
-        message.hidden = false;
-        return;
-      }
-      saveBtn.disabled = true;
-      cancelBtn.disabled = true;
-      message.textContent = "Saving...";
-      message.classList.remove("error");
-      message.hidden = false;
-      try {
-        const classesCollection = getClassesCollection();
-        if (!classesCollection) throw new Error("Missing Firestore reference");
-        const docRef = classesCollection.doc(classEntry.id);
-        const payload = { students };
-        const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
-        if (fieldValue && typeof fieldValue.serverTimestamp === "function") {
-          payload.updatedAt = fieldValue.serverTimestamp();
-        } else {
-          payload.updatedAt = Date.now();
-        }
-        await docRef.update(payload);
-        const localEntry = userClasses.find((entry) => entry.id === classEntry.id);
-        if (localEntry) localEntry.students = students;
-        editingClassId = null;
-        renderClassList();
-      } catch (err) {
-        console.error("Failed to update class", err);
-        message.textContent = "Failed to save changes. Check the console for details.";
-        message.classList.add("error");
-        message.hidden = false;
-        saveBtn.disabled = false;
-        cancelBtn.disabled = false;
-      }
-    });
-
-    editActions.appendChild(cancelBtn);
-    editActions.appendChild(saveBtn);
-    editPanel.appendChild(editActions);
-    classDetailEl.appendChild(editPanel);
-  }
 }
 
 function updateClassSelector() {
@@ -813,8 +840,6 @@ async function deleteClass(classEntry, button) {
     alert("Firestore is unavailable. Cannot delete class.");
     return;
   }
-  const ok = confirm(`Delete class "${classEntry.name}"?`);
-  if (!ok) return;
   const originalLabel = button ? button.textContent : null;
   if (button) {
     button.disabled = true;
@@ -830,9 +855,9 @@ async function deleteClass(classEntry, button) {
     }
     classesError = null;
     const rankingKey = getRankingKeyForClass(classEntry.id);
-    if (rankingStore[rankingKey]) {
-      delete rankingStore[rankingKey];
-    }
+    if (rankingStore[rankingKey]) delete rankingStore[rankingKey];
+    if (editingClassId === classEntry.id) closeClassEditDialog();
+    closeClassDeleteDialog();
     renderClassList();
     fetchGlobalClassCount();
     void adjustGlobalUsageCount(-1);
@@ -850,6 +875,8 @@ async function deleteClass(classEntry, button) {
 
 function openSettingsDialog() {
   if (!settingsDialog) return;
+  closeClassEditDialog();
+  resetAddClassFormUI({ clearFields: true });
   if (currentUserId && firebaseDb && !classesLoading && (userClasses.length === 0 || classesError)) {
     void fetchClassesForUser(currentUserId);
   }
@@ -863,6 +890,8 @@ function openSettingsDialog() {
 
 function closeSettingsDialog() {
   if (!settingsDialog) return;
+  closeClassEditDialog();
+  resetAddClassFormUI({ clearFields: true });
   if (typeof settingsDialog.close === "function") {
     settingsDialog.close();
   } else {
@@ -1119,8 +1148,9 @@ function resetUserStateToDefaults({ render = true } = {}) {
   defaultFixedWinner = null;
   rankingStore = { default: [] };
   maxLen = computeMaxLen();
+  hasUserSelectedClass = false;
   if (!render) return;
-  board.textContent = padToMax("READY");
+  applyReadyMessage({ animate: true });
   updateStartEnabled();
   reconcileFixedWinnerWithPool();
   updateWinnerStatus();
@@ -1345,7 +1375,7 @@ function refreshGlobalStatsSubscription() {
 async function loadUserState(uid) {
   resetUserStateToDefaults({ render: false });
   if (!firebaseDb || !uid) {
-    board.textContent = padToMax("READY");
+    applyReadyMessage();
     updateStartEnabled();
     updateWinnerStatus();
     renderWeeklyList();
@@ -1362,7 +1392,6 @@ async function loadUserState(uid) {
     rankingStore = normalizeRankingStore(data.rankingStore);
     maxLen = computeMaxLen();
     reconcileFixedWinnerWithPool();
-    board.textContent = padToMax("READY");
     updateStartEnabled();
     updateWinnerStatus();
     renderWeeklyList();
@@ -1761,7 +1790,7 @@ function applyNames(newNames, { persist = true } = {}) {
   names = newNames.slice();
   maxLen = computeMaxLen();
   if (persist) persistNames();
-  board.textContent = padToMax("READY");
+  applyReadyMessage();
   updateStartEnabled();
   // If the fixed winner no longer exists in the list, clear it
   if (fixedWinner && !names.some((n) => n.toUpperCase() === fixedWinner.toUpperCase())) {
@@ -1847,14 +1876,11 @@ function escapeHtml(s) {
 
 setWinnerBtn.addEventListener("click", openWinnerDialog);
 cancelWinnerBtn.addEventListener("click", closeWinnerDialog);
-clearWinnerBtn.addEventListener("click", () => {
-  updateActiveWinner(null);
-  closeWinnerDialog();
-});
 
-board.textContent = padToMax("READY");
+animateReadyMessage();
 updateStartEnabled();
 updateWinnerStatus();
+resetAddClassFormUI({ clearFields: true });
 renderWeeklyList();
 renderClassList();
 updateClassUsageNoticeDisplay();
@@ -1877,6 +1903,116 @@ if (settingsBtn) {
 if (helpBtn) {
   helpBtn.addEventListener("click", () => {
     window.location.href = "help.html";
+  });
+}
+
+if (classEditCancelBtn) {
+  classEditCancelBtn.addEventListener("click", () => {
+    closeClassEditDialog();
+  });
+}
+
+if (classEditSaveBtn) {
+  classEditSaveBtn.addEventListener("click", async () => {
+    if (!firebaseDb || !currentUserId || !editingClassId) {
+      alert("Firestore is unavailable. Cannot update class.");
+      return;
+    }
+    const textareaValue = classEditTextarea ? classEditTextarea.value : "";
+    const students = parseStudentList(textareaValue);
+    if (!students.length) {
+      if (classEditMessage) {
+        classEditMessage.textContent = "Enter at least one student.";
+        classEditMessage.classList.add("error");
+        classEditMessage.hidden = false;
+      }
+      return;
+    }
+    if (classEditMessage) {
+      classEditMessage.textContent = "Saving...";
+      classEditMessage.classList.remove("error");
+      classEditMessage.hidden = false;
+    }
+    if (classEditSaveBtn) {
+      classEditSaveBtn.disabled = true;
+      classEditSaveBtn.textContent = "Saving...";
+    }
+    if (classEditCancelBtn) classEditCancelBtn.disabled = true;
+    try {
+      const classesCollection = getClassesCollection();
+      if (!classesCollection) throw new Error("Missing Firestore reference");
+      const docRef = classesCollection.doc(editingClassId);
+      const payload = { students };
+      const fieldValue = firebase && firebase.firestore && firebase.firestore.FieldValue;
+      if (fieldValue && typeof fieldValue.serverTimestamp === "function") {
+        payload.updatedAt = fieldValue.serverTimestamp();
+      } else {
+        payload.updatedAt = Date.now();
+      }
+      await docRef.update(payload);
+      const localEntry = userClasses.find((entry) => entry.id === editingClassId);
+      if (localEntry) localEntry.students = students;
+      userClasses.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      renderClassList();
+      void refreshGlobalStudentCount();
+      closeClassEditDialog();
+    } catch (err) {
+      console.error("Failed to update class", err);
+      if (classEditMessage) {
+        classEditMessage.textContent = "Failed to save changes. Check the console for details.";
+        classEditMessage.classList.add("error");
+        classEditMessage.hidden = false;
+      }
+      if (classEditSaveBtn) {
+        classEditSaveBtn.disabled = false;
+        classEditSaveBtn.textContent = "Save";
+      }
+      if (classEditCancelBtn) classEditCancelBtn.disabled = false;
+    }
+  });
+}
+
+if (classEditDialog) {
+  classEditDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeClassEditDialog();
+  });
+}
+
+if (classDeleteCancelBtn) {
+  classDeleteCancelBtn.addEventListener("click", () => {
+    closeClassDeleteDialog();
+  });
+}
+
+if (classDeleteConfirmBtn) {
+  classDeleteConfirmBtn.addEventListener("click", async () => {
+    if (!pendingDeleteClass) {
+      closeClassDeleteDialog();
+      return;
+    }
+    classDeleteConfirmBtn.disabled = true;
+    classDeleteConfirmBtn.textContent = "Deleting...";
+    if (classDeleteCancelBtn) classDeleteCancelBtn.disabled = true;
+    const { entry, triggerButton } = pendingDeleteClass;
+    try {
+      await deleteClass(entry, triggerButton);
+    } finally {
+      if (classDeleteDialog && classDeleteDialog.open) {
+        if (classDeleteConfirmBtn) {
+          classDeleteConfirmBtn.disabled = false;
+          classDeleteConfirmBtn.textContent = "Delete";
+        }
+        if (classDeleteCancelBtn) classDeleteCancelBtn.disabled = false;
+      }
+    }
+  });
+}
+
+if (classDeleteDialog) {
+  classDeleteDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeClassDeleteDialog();
   });
 }
 
@@ -1903,6 +2039,12 @@ if (classSelector) {
 
 if (addClassBtn) {
   addClassBtn.addEventListener("click", async () => {
+    if (!isAddingClass) {
+      if (classNameInput) classNameInput.value = "";
+      if (studentListTextarea) studentListTextarea.value = "";
+      openAddClassFormUI();
+      return;
+    }
     if (!currentUserId) {
       alert("Sign in to add a class.");
       return;
@@ -1926,7 +2068,6 @@ if (addClassBtn) {
       const overwrite = confirm("A class with this name already exists. Add another entry anyway?");
       if (!overwrite) return;
     }
-    const originalLabel = addClassBtn.textContent;
     addClassBtn.disabled = true;
     addClassBtn.textContent = "Saving...";
     try {
@@ -1953,14 +2094,13 @@ if (addClassBtn) {
       fetchGlobalClassCount();
       void adjustGlobalUsageCount(1);
       void refreshGlobalStudentCount();
-      if (classNameInput) classNameInput.value = "";
-      if (studentListTextarea) studentListTextarea.value = "";
+      resetAddClassFormUI({ clearFields: true });
     } catch (err) {
       console.error("Failed to add class", err);
       alert("Failed to add class. Check the console for details.");
     } finally {
       addClassBtn.disabled = false;
-      addClassBtn.textContent = originalLabel;
+      addClassBtn.textContent = isAddingClass ? "Save Class" : "Add Class";
     }
   });
 }

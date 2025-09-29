@@ -93,7 +93,6 @@
           <div id="winnerGrid" class="name-grid"></div>
           <div class="dialog-actions">
             <button type="button" id="cancelWinnerBtn" class="btn btn-secondary btn-sm">Close</button>
-            <button type="button" id="clearWinnerBtn" class="btn btn-secondary btn-sm">Clear Winner</button>
           </div>
         </form>
       </dialog>
@@ -106,9 +105,8 @@
             <section class="class-list-panel">
               <div id="classList" class="class-list" aria-live="polite" role="listbox" aria-label="Classes"></div>
             </section>
-            <section id="classDetail" class="class-detail-panel" aria-live="polite"></section>
           </div>
-          <fieldset class="settings-add">
+          <fieldset id="settingsAddFieldset" class="settings-add" hidden>
             <legend>Add New Class</legend>
             <label class="settings-label" for="classNameInput">Course Name</label>
             <input id="classNameInput" class="settings-input" type="text" placeholder="Intro to Robotics" />
@@ -118,6 +116,31 @@
           <div class="dialog-actions settings-actions">
             <button type="button" id="closeSettingsBtn" class="btn btn-secondary">Back</button>
             <button type="button" id="addClassBtn" class="btn btn-sm">Add Class</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="classEditDialog" class="dialog class-edit-dialog" aria-labelledby="classEditTitle">
+        <form method="dialog" class="dialog-body">
+          <h2 id="classEditTitle" class="dialog-title">Edit Class</h2>
+          <p class="dialog-subtitle">Update the student list. Enter one student per line.</p>
+          <label class="settings-label" for="classEditTextarea">Student List</label>
+          <textarea id="classEditTextarea" class="settings-textarea class-edit-textarea" rows="8" placeholder="Alice&#10;Bob&#10;Charlie"></textarea>
+          <p id="classEditMessage" class="settings-message" hidden></p>
+          <div class="dialog-actions">
+            <button type="button" id="classEditCancelBtn" class="btn btn-secondary btn-sm">Cancel</button>
+            <button type="button" id="classEditSaveBtn" class="btn btn-sm">Save</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="classDeleteDialog" class="dialog class-delete-dialog" aria-labelledby="classDeleteTitle">
+        <form method="dialog" class="dialog-body">
+          <h2 id="classDeleteTitle" class="dialog-title">Delete Class</h2>
+          <p id="classDeleteMessage" class="settings-message"></p>
+          <div class="dialog-actions">
+            <button type="button" id="classDeleteCancelBtn" class="btn btn-secondary btn-sm">Cancel</button>
+            <button type="button" id="classDeleteConfirmBtn" class="btn btn-danger btn-sm">Delete</button>
           </div>
         </form>
       </dialog>
