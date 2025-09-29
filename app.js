@@ -460,11 +460,16 @@ function updateLoginButton() {
   const user = firebaseAuth && firebaseAuth.currentUser;
   if (user) {
     const display = (user.displayName || user.email || "").trim();
-    loginBtn.textContent = display ? `Sign out (${display})` : "Sign out";
+    loginBtn.textContent = "Sign out";
     loginBtn.title = display ? `Signed in as ${display}` : "Signed in";
   } else {
     loginBtn.textContent = "Sign in with Google";
     loginBtn.title = "Sign in with Google";
+  }
+  const bodyEl = document.body;
+  if (bodyEl) {
+    bodyEl.classList.toggle("is-signed-in", !!user);
+    bodyEl.classList.toggle("is-signed-out", !user);
   }
   ensureSettingsVisibility();
 }
